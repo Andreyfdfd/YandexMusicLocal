@@ -109,6 +109,17 @@ DEFAULT_SETTINGS = {
 }
 
 
+def configured_music_folder(settings: dict) -> Optional[Path]:
+    """Return None for an unset folder; Path('') would incorrectly mean the current directory."""
+    raw_path = str(settings.get("music_folder") or "").strip()
+    if not raw_path:
+        return None
+    try:
+        return Path(raw_path).expanduser()
+    except (OSError, ValueError):
+        return None
+
+
 def load_settings() -> dict:
     result = dict(DEFAULT_SETTINGS)
     if not SETTINGS_PATH.exists():
@@ -2747,7 +2758,11 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1180, 720)
 
         self.settings = load_settings()
-        self.music_folder = Path(self.settings.get("music_folder") or "")
+        configured_folder = configured_music_folder(self.settings)
+        self._music_folder_configured = configured_folder is not None
+        # Keep a harmless Path placeholder for older UI components; never treat
+        # it as a selected library unless the user actually configured a folder.
+        self.music_folder = configured_folder or Path()
 
         if vlc is None:
             raise RuntimeError(
@@ -2862,7 +2877,11 @@ class MainWindow(QMainWindow):
         self.statusBar().setObjectName("StatusBar")
         self.statusBar().showMessage("Готово")
 
-        self.sidebar.set_music_path(self.music_folder if self.music_folder.exists() else None)
+        self.sidebar.set_music_path(
+            self.music_folder
+            if self._music_folder_configured and self.music_folder.exists() and self.music_folder.is_dir()
+            else None
+        )
         self.sidebar.set_active(self.sidebar.btn_home)
 
     def _load_saved_view_state(self) -> None:
@@ -2884,19 +2903,30 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ folder
     def _validate_music_folder(self) -> None:
-        if self.music_folder and self.music_folder.exists() and self.music_folder.is_dir():
+        if (
+            self._music_folder_configured
+            and self.music_folder.exists()
+            and self.music_folder.is_dir()
+        ):
             self._load_or_scan_existing()
             return
         self.choose_music_folder(initial=True)
 
     def choose_music_folder(self, initial: bool = False) -> None:
-        start = str(self.music_folder if self.music_folder.exists() else Path.home())
+        start = str(
+            self.music_folder
+            if self._music_folder_configured
+            and self.music_folder.exists()
+            and self.music_folder.is_dir()
+            else Path.home()
+        )
         folder = QFileDialog.getExistingDirectory(self, "Выберите папку с музыкой", start)
         if not folder:
             if initial:
                 self.statusBar().showMessage("Папка с музыкой не выбрана")
             return
         self.music_folder = Path(folder).resolve()
+        self._music_folder_configured = True
         self.settings["music_folder"] = str(self.music_folder)
         save_settings(self.settings)
         self.sidebar.set_music_path(self.music_folder)
