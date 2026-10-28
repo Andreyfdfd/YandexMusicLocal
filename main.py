@@ -40,6 +40,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -637,45 +638,59 @@ def extract_embedded_cover(path: str, audio_obj=None) -> Optional[bytes]:
 
 
 class CoverMemoryCache:
-    """LRU-кэш уже декодированных QImage для GUI."""
+    """Thread-safe LRU for decoded images with a strict memory budget."""
 
-    def __init__(self, max_items: int = 900):
-        self.max_items = max_items
+    def __init__(self, max_bytes: int = 64 * 1024 * 1024):
+        self.max_bytes = max(1024, int(max_bytes))
         self._lock = threading.RLock()
-        self._images: dict[tuple[str, int], QImage] = {}
-        self._order: list[tuple[str, int]] = []
+        self._images: OrderedDict[tuple[str, int], QImage] = OrderedDict()
+        self._image_bytes: dict[tuple[str, int], int] = {}
+        self._total_bytes = 0
+
+    @staticmethod
+    def _byte_size(image: QImage) -> int:
+        try:
+            return max(0, int(image.sizeInBytes()))
+        except (AttributeError, RuntimeError):
+            return max(0, int(image.bytesPerLine() * image.height()))
 
     def get(self, path: str, size: int) -> Optional[QImage]:
         key = (path, int(size))
         with self._lock:
             image = self._images.get(key)
             if image is not None:
-                try:
-                    self._order.remove(key)
-                except ValueError:
-                    pass
-                self._order.append(key)
+                self._images.move_to_end(key)
             return image
 
     def put(self, path: str, size: int, image: Optional[QImage]) -> None:
         if image is None or image.isNull():
             return
         key = (path, int(size))
+        image_bytes = self._byte_size(image)
+        # Do not let one unusually large image evict the entire useful cache.
+        if image_bytes > self.max_bytes:
+            return
+
         with self._lock:
+            previous_size = self._image_bytes.pop(key, 0)
+            if key in self._images:
+                self._images.pop(key, None)
+                self._total_bytes -= previous_size
+
             self._images[key] = image
-            try:
-                self._order.remove(key)
-            except ValueError:
-                pass
-            self._order.append(key)
-            while len(self._order) > self.max_items:
-                old = self._order.pop(0)
-                self._images.pop(old, None)
+            self._image_bytes[key] = image_bytes
+            self._total_bytes += image_bytes
+
+            while self._total_bytes > self.max_bytes and self._images:
+                old_key, _old_image = self._images.popitem(last=False)
+                old_size = self._image_bytes.pop(old_key, 0)
+                self._total_bytes -= old_size
 
     def clear(self) -> None:
         with self._lock:
             self._images.clear()
-            self._order.clear()
+            self._image_bytes.clear()
+            self._total_bytes = 0
 
 
 COVER_CACHE = CoverMemoryCache()
