@@ -7,13 +7,23 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $ProjectRoot
 
-Write-Host "Project: $ProjectRoot" -ForegroundColor Cyan
-python --version
-if ($LASTEXITCODE -ne 0) {
-    throw 'Python не запустился. Проверь PATH или используй .\.venv\Scripts\python.exe.'
+$venvPython = Join-Path $ProjectRoot '.venv\Scripts\python.exe'
+if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+    $pythonExe = $venvPython
+} else {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $pythonCommand) {
+        throw 'Python не найден. Выполни py -0p и создай виртуальное окружение .venv.'
+    }
+    $pythonExe = $pythonCommand.Source
 }
 
-$pythonExe = (Get-Command python).Source
+Write-Host "Project: $ProjectRoot" -ForegroundColor Cyan
+& $pythonExe --version
+if ($LASTEXITCODE -ne 0) {
+    throw "Python завершился с кодом $LASTEXITCODE"
+}
+
 $entryPoint = Join-Path $ProjectRoot 'main.py'
 if (-not (Test-Path -LiteralPath $entryPoint -PathType Leaf)) {
     throw "Каноническая точка входа не найдена: $entryPoint"
