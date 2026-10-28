@@ -2191,6 +2191,11 @@ class TrackList(QWidget):
         if maximum <= 0 or maximum - scroll_value < 900:
             self._append_batch()
 
+    def set_listened_ms(self, path: str, milliseconds: int) -> None:
+        for row in self.rows:
+            if row.track.get("file_path") == path:
+                row.set_listened_ms(milliseconds)
+
     def load_visible_covers(self, scroll_value: int, viewport_height: int) -> None:
         if not self.rows:
             return
@@ -3330,6 +3335,11 @@ class MainWindow(QMainWindow):
         self.shuffle_enabled = bool(self.settings.get("shuffle", False))
         self.repeat_mode = int(self.settings.get("repeat_mode", 0) or 0)
         self.track_duration = 0
+        self._listening_session_id: Optional[int] = None
+        self._listening_session_ms = 0
+        self._listening_base_ms = 0
+        self._listening_last_sample: Optional[float] = None
+        self._listening_last_flush_ms = 0
         self.scan_running = False
         self.scan_silent = False
         self.scan_overlay = None
@@ -3844,6 +3854,7 @@ class MainWindow(QMainWindow):
             self.play_next()
             return
 
+        self._finish_listening_session(completed=False)
         if not self._ensure_player():
             return
 
@@ -3871,6 +3882,11 @@ class MainWindow(QMainWindow):
         self.home.set_now_playing(track)
         self.album_page.track_list.set_playing_path(path)
         self.library.set_playing(path)
+        self._listening_session_id = start_listening_session(track)
+        self._listening_session_ms = 0
+        self._listening_base_ms = int(track.get("listened_ms") or 0)
+        self._listening_last_sample = None
+        self._listening_last_flush_ms = 0
 
         self.settings["last_track_rel"] = track.get("relative_path", "")
         self.settings["shuffle"] = self.shuffle_enabled
@@ -3980,12 +3996,87 @@ class MainWindow(QMainWindow):
             self.history_pos = 0
             self._start_current()
 
+    def _finish_listening_session(self, completed: bool = False) -> None:
+        if self._listening_session_id is None:
+            return
+        session_id = self._listening_session_id
+        total_ms = max(0, int(self._listening_session_ms))
+        track_path = self.current_path
+        track_total_ms = self._listening_base_ms + total_ms
+        try:
+            update_listening_session(
+                session_id,
+                total_ms,
+                finished=True,
+                completed=completed,
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f"Не удалось сохранить историю: {exc}", 5000)
+        self._listening_session_id = None
+        self._listening_last_sample = None
+        if self.current_track and self.current_track.get("file_path") == track_path:
+            self.current_track["listened_ms"] = track_total_ms
+        for queued in self.queue:
+            if queued.get("file_path") == track_path:
+                queued["listened_ms"] = track_total_ms
+        self.library.track_list.set_listened_ms(track_path, track_total_ms)
+        self.album_page.track_list.set_listened_ms(track_path, track_total_ms)
+        if self.stack.currentWidget() is self.history_page:
+            self.history_page.refresh()
+
+    def _select_first_track(self) -> bool:
+        """Select a sensible default track without opening VLC or starting playback."""
+        try:
+            tracks = fetch_all_tracks(
+                self.music_folder,
+                "Время прослушивания",
+                True,
+            )
+        except Exception as exc:
+            self.statusBar().showMessage(f"Не удалось выбрать трек: {exc}", 5000)
+            return False
+        if not tracks:
+            return False
+
+        self._finish_listening_session(completed=False)
+        if self.player is not None:
+            try:
+                self.player.stop()
+            except Exception:
+                pass
+        self.queue = [self._normalise_track(track) for track in tracks]
+        self.queue_index = 0
+        self.history = [0]
+        self.history_pos = 0
+        self.shuffle_enabled = False
+        self.player_bar.set_shuffle(False)
+        track = self.queue[0]
+        path = resolve_track_path(track, self.music_folder)
+        if not path or not Path(path).is_file():
+            return False
+
+        track["file_path"] = path
+        self.current_path = path
+        self.current_track = track
+        self.track_duration = int(track.get("duration_ms") or 0)
+        self.player_bar.set_track(track)
+        self.player_bar.set_playing(False)
+        self.player_bar.set_queue(self.queue, self.queue_index)
+        self.player_bar.set_progress(0, self.track_duration)
+        self.home.set_now_playing(track)
+        self.album_page.track_list.set_playing_path(path)
+        self.library.set_playing(path)
+        self.settings["last_track_rel"] = track.get("relative_path", "")
+        self._settings_timer.start()
+        return True
+
     def _tick(self) -> None:
-        if not self.current_path:
+        if not self.current_path or self.player is None:
             return
         try:
             state = self.player.get_state()
             if state == vlc.State.Ended:
+                self._finish_listening_session(completed=True)
                 self.play_next()
                 return
 
@@ -3994,7 +4085,30 @@ class MainWindow(QMainWindow):
             if total <= 0:
                 total = self.track_duration
             self.player_bar.set_progress(current, total)
-            self.player_bar.set_playing(state == vlc.State.Playing)
+            is_playing = state == vlc.State.Playing
+            self.player_bar.set_playing(is_playing)
+
+            if self._listening_session_id is not None and is_playing:
+                now = time.monotonic()
+                if self._listening_last_sample is not None:
+                    elapsed_ms = int((now - self._listening_last_sample) * 1000)
+                    # Ignore long UI stalls rather than inflating listening time.
+                    if 0 < elapsed_ms <= 1500:
+                        self._listening_session_ms += elapsed_ms
+                self._listening_last_sample = now
+                if self._listening_session_ms - self._listening_last_flush_ms >= 5000:
+                    update_listening_session(
+                        self._listening_session_id,
+                        self._listening_session_ms,
+                    )
+                    self._listening_last_flush_ms = self._listening_session_ms
+                    total_listened = self._listening_base_ms + self._listening_session_ms
+                    self.library.track_list.set_listened_ms(self.current_path, total_listened)
+                    self.album_page.track_list.set_listened_ms(self.current_path, total_listened)
+                    if self.stack.currentWidget() is self.history_page:
+                        self.history_page.refresh()
+            else:
+                self._listening_last_sample = None
         except Exception:
             pass
 
@@ -4087,6 +4201,7 @@ class MainWindow(QMainWindow):
                 }
             save_settings(self.settings)
             self.playback_timer.stop()
+            self._finish_listening_session(completed=False)
             if self.player is not None:
                 self.player.stop()
             if self.vlc_instance is not None:
