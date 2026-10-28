@@ -40,6 +40,8 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
+from datetime import datetime
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
@@ -360,6 +362,9 @@ from PyQt6.QtWidgets import (
     QSpacerItem,
     QStyle,
     QStyleOptionSlider,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
 
 from PIL import Image, ImageOps
@@ -392,6 +397,23 @@ CREATE TABLE IF NOT EXISTS tracks (
     favorite INTEGER DEFAULT 0,
     FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS listening_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_key TEXT NOT NULL,
+    track_name TEXT NOT NULL,
+    artist TEXT NOT NULL,
+    album TEXT NOT NULL,
+    file_path TEXT NOT NULL DEFAULT '',
+    started_at REAL NOT NULL,
+    ended_at REAL DEFAULT NULL,
+    listened_ms INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_listening_started ON listening_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_listening_track ON listening_sessions(track_key);
+CREATE INDEX IF NOT EXISTS idx_listening_artist ON listening_sessions(artist);
+CREATE INDEX IF NOT EXISTS idx_listening_album ON listening_sessions(artist, album);
 
 """
 
@@ -514,6 +536,161 @@ def format_bytes(size: int | None) -> str:
     if unit == "Б":
         return f"{int(value)} {unit}"
     return f"{value:.1f} {unit}"
+
+
+def format_listening_ms(milliseconds: int | None) -> str:
+    """Compact human-readable lifetime listening time."""
+    total_minutes = max(0, int(milliseconds or 0)) // 60_000
+    if total_minutes == 0:
+        return "—" if not milliseconds else "< 1 мин"
+    hours, minutes = divmod(total_minutes, 60)
+    if hours:
+        return f"{hours} ч {minutes:02d} мин" if minutes else f"{hours} ч"
+    return f"{minutes} мин"
+
+
+def start_listening_session(track: dict) -> Optional[int]:
+    """Persist a playback session immediately, so history survives a crash."""
+    file_path = str(track.get("file_path") or "")
+    if not file_path:
+        return None
+    started_at = time.time()
+    conn = db_connect()
+    try:
+        cursor = conn.execute(
+            """INSERT INTO listening_sessions
+               (track_key, track_name, artist, album, file_path, started_at, listened_ms, completed)
+               VALUES (?, ?, ?, ?, ?, ?, 0, 0)""",
+            (
+                file_path,
+                safe_text(track.get("track_name"), "Неизвестный трек"),
+                safe_text(track.get("artist"), "Неизвестный исполнитель"),
+                safe_text(track.get("album"), "Без названия"),
+                file_path,
+                started_at,
+            ),
+        )
+        conn.commit()
+        return int(cursor.lastrowid)
+    finally:
+        conn.close()
+
+
+def update_listening_session(
+    session_id: Optional[int],
+    listened_ms: int,
+    *,
+    finished: bool = False,
+    completed: bool = False,
+) -> None:
+    if not session_id:
+        return
+    conn = db_connect()
+    try:
+        if finished:
+            conn.execute(
+                """UPDATE listening_sessions
+                   SET listened_ms=?, ended_at=?, completed=?
+                   WHERE id=?""",
+                (max(0, int(listened_ms)), time.time(), int(bool(completed)), session_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE listening_sessions SET listened_ms=? WHERE id=?",
+                (max(0, int(listened_ms)), session_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fetch_listening_summary() -> dict:
+    conn = db_connect()
+    try:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(listened_ms), 0),
+                      COUNT(*),
+                      COUNT(DISTINCT track_key),
+                      MAX(started_at)
+               FROM listening_sessions"""
+        ).fetchone()
+    finally:
+        conn.close()
+    row = row or (0, 0, 0, None)
+    return {
+        "listened_ms": int(row[0] or 0),
+        "sessions": int(row[1] or 0),
+        "tracks": int(row[2] or 0),
+        "last_played": row[3],
+    }
+
+
+def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
+    conn = db_connect()
+    try:
+        if mode == "История":
+            rows = conn.execute(
+                """SELECT track_name, artist, album, listened_ms, started_at, completed
+                   FROM listening_sessions
+                   ORDER BY started_at DESC, id DESC LIMIT ?""",
+                (int(limit),),
+            ).fetchall()
+            return [
+                {"title": safe_text(r[0], "Неизвестный трек"),
+                 "artist": safe_text(r[1], "Неизвестный исполнитель"),
+                 "album": safe_text(r[2], "Без названия"),
+                 "listened_ms": int(r[3] or 0), "last_played": r[4],
+                 "completed": bool(r[5])}
+                for r in rows
+            ]
+        if mode == "Исполнители":
+            rows = conn.execute(
+                """SELECT artist, COUNT(DISTINCT track_key), SUM(listened_ms), MAX(started_at)
+                   FROM listening_sessions
+                   GROUP BY artist COLLATE NOCASE
+                   ORDER BY SUM(listened_ms) DESC, artist COLLATE NOCASE LIMIT ?""",
+                (int(limit),),
+            ).fetchall()
+            return [
+                {"title": safe_text(r[0], "Неизвестный исполнитель"),
+                 "artist": "", "album": f"{int(r[1] or 0)} уник. треков",
+                 "listened_ms": int(r[2] or 0), "last_played": r[3]}
+                for r in rows
+            ]
+        if mode == "Альбомы":
+            rows = conn.execute(
+                """SELECT album, artist, COUNT(DISTINCT track_key), SUM(listened_ms), MAX(started_at)
+                   FROM listening_sessions
+                   GROUP BY artist COLLATE NOCASE, album COLLATE NOCASE
+                   ORDER BY SUM(listened_ms) DESC, album COLLATE NOCASE LIMIT ?""",
+                (int(limit),),
+            ).fetchall()
+            return [
+                {"title": safe_text(r[0], "Без названия"),
+                 "artist": safe_text(r[1], "Неизвестный исполнитель"),
+                 "album": f"{int(r[2] or 0)} уник. треков",
+                 "listened_ms": int(r[3] or 0), "last_played": r[4]}
+                for r in rows
+            ]
+
+        rows = conn.execute(
+            """SELECT track_name, artist, album, COUNT(*) AS sessions,
+                      SUM(listened_ms) AS total_ms, MAX(started_at)
+               FROM listening_sessions
+               GROUP BY track_key
+               ORDER BY SUM(listened_ms) DESC, MAX(started_at) DESC LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+        return [
+            {"title": safe_text(r[0], "Неизвестный трек"),
+             "artist": safe_text(r[1], "Неизвестный исполнитель"),
+             "album": safe_text(r[2], "Без названия"),
+             "sessions": int(r[3] or 0), "listened_ms": int(r[4] or 0),
+             "last_played": r[5]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
 
 
 def resolve_track_path(track: dict, music_folder: Path) -> str:
