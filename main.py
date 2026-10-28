@@ -156,7 +156,7 @@ def _desktop_path() -> Path:
             )
             if result == 0 and buffer.value:
                 return Path(buffer.value)
-        except (AttributeError, OSError, ValueError):
+        except (AttributeError, OSError, TypeError, ValueError):
             pass
 
     candidates = [
