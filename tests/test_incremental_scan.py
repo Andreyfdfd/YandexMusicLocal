@@ -121,5 +121,49 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(self.get_tracks(), before)
 
 
+    def test_legacy_schema_migrates_before_indexes_created(self):
+        conn = sqlite3.connect(main.DB_PATH)
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE albums (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    artist TEXT NOT NULL,
+                    album_name TEXT NOT NULL,
+                    year INTEGER DEFAULT NULL,
+                    UNIQUE(artist, album_name)
+                );
+                CREATE TABLE tracks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    album_id INTEGER,
+                    track_name TEXT NOT NULL,
+                    genre TEXT DEFAULT 'Разное',
+                    file_path TEXT NOT NULL UNIQUE,
+                    FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE
+                );
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Previous releases may have tables without relative_path/duration/file_size/mtime.
+        # Schema migration must add those columns before adding dependent indexes.
+        main.ensure_database_schema()
+
+        conn = sqlite3.connect(main.DB_PATH)
+        try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(tracks)")}
+        finally:
+            conn.close()
+
+        self.assertTrue(
+            {"relative_path", "duration_ms", "file_size", "mtime", "favorite"} <= columns
+        )
+        self.assertIn("idx_tracks_duration", indexes)
+        self.assertIn("idx_tracks_relative_path", indexes)
+
+
 if __name__ == "__main__":
     unittest.main()
