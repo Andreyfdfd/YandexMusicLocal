@@ -2024,19 +2024,20 @@ class TrackRow(QWidget):
 
         self.album = ElidedLabel(safe_text(track.get("album"), "—"), DIM)
         self.album.setFont(QFont("Segoe UI", 9))
-        self.album.setFixedWidth(210)
+        self.album.setFixedWidth(190)
         root.addWidget(self.album)
 
         self.genre = ElidedLabel(safe_text(track.get("genre"), "Разное"), DIM)
         self.genre.setFont(QFont("Segoe UI", 9))
-        self.genre.setFixedWidth(120)
+        self.genre.setFixedWidth(96)
         root.addWidget(self.genre)
 
-        self.year = QLabel(str(track.get("year") or ""))
-        self.year.setObjectName("RowYear")
-        self.year.setFixedWidth(46)
-        self.year.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        root.addWidget(self.year)
+        self.listened = QLabel(format_listening_ms(track.get("listened_ms")))
+        self.listened.setObjectName("RowListened")
+        self.listened.setFixedWidth(92)
+        self.listened.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.listened.setToolTip("Суммарное время прослушивания этого трека")
+        root.addWidget(self.listened)
 
         self.duration = QLabel(format_ms(track.get("duration_ms")))
         self.duration.setObjectName("RowDuration")
@@ -2062,7 +2063,7 @@ class TrackRow(QWidget):
             self.artist,
             self.album,
             self.genre,
-            self.year,
+            self.listened,
             self.duration,
         ):
             child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -2095,6 +2096,10 @@ class TrackRow(QWidget):
         self.style().unpolish(self)
         self.style().polish(self)
         self.update()
+
+    def set_listened_ms(self, milliseconds: int) -> None:
+        self.track["listened_ms"] = max(0, int(milliseconds))
+        self.listened.setText(format_listening_ms(milliseconds))
 
     def contextMenuEvent(self, event) -> None:
         path = resolve_track_path(self.track, self.music_folder)
@@ -2757,8 +2762,8 @@ class LibraryPage(QWidget):
         super().__init__(parent)
         self.music_folder = music_folder
         self.results: list[dict] = []
-        self.sort_mode = "Название"
-        self.reverse = False
+        self.sort_mode = "Время прослушивания"
+        self.reverse = True
         self.genre = "Все жанры"
 
         root = QVBoxLayout(self)
@@ -2768,8 +2773,9 @@ class LibraryPage(QWidget):
         head = QHBoxLayout()
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
-        title = QLabel("Все треки")
+        title = QLabel("Треки")
         title.setObjectName("PageTitle")
+        self.title_label = title
         title_box.addWidget(title)
         self.count = QLabel("Загрузка…")
         self.count.setObjectName("MutedText")
@@ -2790,6 +2796,7 @@ class LibraryPage(QWidget):
 
         self.sort = SortBar(
             [
+                "Время прослушивания",
                 "Название",
                 "Исполнитель",
                 "Альбом",
@@ -2800,6 +2807,13 @@ class LibraryPage(QWidget):
                 "Изменение файла",
             ]
         )
+        self.sort.combo.blockSignals(True)
+        self.sort.direction.blockSignals(True)
+        self.sort.combo.setCurrentText("Время прослушивания")
+        self.sort.direction.setChecked(True)
+        self.sort.direction.setText("↓")
+        self.sort.direction.blockSignals(False)
+        self.sort.combo.blockSignals(False)
         self.sort.changed.connect(self._sort_changed)
         head.addWidget(self.sort)
 
@@ -2820,10 +2834,10 @@ class LibraryPage(QWidget):
             ("", 28),
             ("", 46),
             ("Название / исполнитель", 0),
-            ("Альбом", 210),
-            ("Жанр", 120),
-            ("Год", 46),
-            ("Длительность", 58),
+            ("Альбом", 190),
+            ("Жанр", 96),
+            ("Слушано", 92),
+            ("Длительность", 64),
             ("", 32),
         ):
             label = QLabel(text)
