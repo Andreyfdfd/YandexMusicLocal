@@ -634,7 +634,7 @@ def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
     try:
         if mode == "История":
             rows = conn.execute(
-                """SELECT track_name, artist, album, listened_ms, started_at, completed
+                """SELECT track_name, artist, album, listened_ms, started_at, completed, file_path
                    FROM listening_sessions
                    ORDER BY started_at DESC, id DESC LIMIT ?""",
                 (int(limit),),
@@ -644,7 +644,7 @@ def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
                  "artist": safe_text(r[1], "Неизвестный исполнитель"),
                  "album": safe_text(r[2], "Без названия"),
                  "listened_ms": int(r[3] or 0), "last_played": r[4],
-                 "completed": bool(r[5])}
+                 "completed": bool(r[5]), "file_path": str(r[6] or "")}
                 for r in rows
             ]
         if mode == "Исполнители":
@@ -678,8 +678,8 @@ def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
             ]
 
         rows = conn.execute(
-            """SELECT track_name, artist, album, COUNT(*) AS sessions,
-                      SUM(listened_ms) AS total_ms, MAX(started_at)
+            """SELECT track_name, artist, album, track_key,
+                      COUNT(*) AS sessions, SUM(listened_ms) AS total_ms, MAX(started_at)
                FROM listening_sessions
                GROUP BY track_key
                ORDER BY SUM(listened_ms) DESC, MAX(started_at) DESC LIMIT ?""",
@@ -689,8 +689,9 @@ def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
             {"title": safe_text(r[0], "Неизвестный трек"),
              "artist": safe_text(r[1], "Неизвестный исполнитель"),
              "album": safe_text(r[2], "Без названия"),
-             "sessions": int(r[3] or 0), "listened_ms": int(r[4] or 0),
-             "last_played": r[5]}
+             "file_path": str(r[3] or ""),
+             "sessions": int(r[4] or 0), "listened_ms": int(r[5] or 0),
+             "last_played": r[6]}
             for r in rows
         ]
     finally:
@@ -2959,6 +2960,8 @@ class LibraryPage(QWidget):
 class ListeningHistoryPage(QWidget):
     """Local listening history and lifetime statistics, stored in SQLite."""
 
+    track_activated = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         root = QVBoxLayout(self)
@@ -3015,6 +3018,8 @@ class ListeningHistoryPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setAlternatingRowColors(False)
+        self.table.cellDoubleClicked.connect(self._activate_row)
+        self._row_track_paths: list[str] = []
         root.addWidget(self.table, 1)
 
         self.empty = QLabel("История появится после начала прослушивания")
@@ -3037,6 +3042,12 @@ class ListeningHistoryPage(QWidget):
         layout.addWidget(label)
         layout.addWidget(metric)
         return card, metric
+
+    def _activate_row(self, row: int, _column: int) -> None:
+        if 0 <= row < len(self._row_track_paths):
+            path = self._row_track_paths[row]
+            if path:
+                self.track_activated.emit(path)
 
     @staticmethod
     def _time_label(value) -> str:
@@ -3068,8 +3079,10 @@ class ListeningHistoryPage(QWidget):
 
         self.table.setUpdatesEnabled(False)
         self.table.setRowCount(0)
+        self._row_track_paths = []
         for row in rows:
             index = self.table.rowCount()
+            self._row_track_paths.append(str(row.get("file_path") or ""))
             self.table.insertRow(index)
             title = str(row.get("title") or "—")
             artist = str(row.get("artist") or "")
@@ -3452,6 +3465,7 @@ class MainWindow(QMainWindow):
         self.library.favorite_changed.connect(self.on_favorite_changed)
 
         self.history_page = ListeningHistoryPage()
+        self.history_page.track_activated.connect(self.play_history_path)
         self.stack.addWidget(self.library)
         self.stack.addWidget(self.home)
         self.stack.addWidget(self.album_page)
@@ -3763,6 +3777,21 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.history_page)
         self.sidebar.set_active(self.sidebar.btn_history)
         self.history_page.refresh()
+
+    def play_history_path(self, path: str) -> None:
+        if not path or not Path(path).is_file():
+            self.statusBar().showMessage("Файл из истории больше не найден на диске", 5000)
+            return
+        tracks = fetch_all_tracks(self.music_folder, "Время прослушивания", True)
+        key = os.path.normcase(os.path.abspath(path))
+        for index, track in enumerate(tracks):
+            if os.path.normcase(os.path.abspath(track.get("file_path", ""))) == key:
+                self._set_queue(tracks, index, False)
+                return
+        self.statusBar().showMessage(
+            "Этот трек не входит в текущую библиотеку. Обнови папку музыки или выполни сканирование.",
+            7000,
+        )
 
     def show_search(self) -> None:
         self.stack.setCurrentWidget(self.library)
