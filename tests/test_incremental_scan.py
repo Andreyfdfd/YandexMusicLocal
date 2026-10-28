@@ -121,6 +121,25 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(self.get_tracks(), before)
 
 
+    def test_album_query_task_returns_cached_album_summaries(self):
+        self.make_track(self.music, "sample.mp3")
+        self.assertEqual(self.run_scan(self.music), (1, 0))
+
+        task = main.AlbumQueryTask(17, "Исполнитель", False)
+        results = []
+        task.signals.finished.connect(
+            lambda generation, albums, error: results.append((generation, albums, error))
+        )
+        task.run()
+
+        self.assertEqual(len(results), 1)
+        generation, albums, error = results[0]
+        self.assertEqual(generation, 17)
+        self.assertEqual(error, "")
+        self.assertEqual(len(albums), 1)
+        self.assertEqual(albums[0]["album"], "Test Album")
+        self.assertEqual(albums[0]["artist"], "Test Artist")
+
     def test_unset_music_folder_is_not_treated_as_current_directory(self):
         self.assertIsNone(main.configured_music_folder({}))
         self.assertIsNone(main.configured_music_folder({"music_folder": ""}))
