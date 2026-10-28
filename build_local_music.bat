@@ -95,7 +95,7 @@ if errorlevel 1 (
 echo.
 echo СБОРКА ЗАВЕРШЕНА
 echo EXE: %OUT%\YandexMusicLocal.exe
-echo Ярлык: %USERPROFILE%\Desktop\Local Music.lnk
+echo Ярлык: Local Music.lnk на рабочем столе
 echo.
 pause
 goto END
