@@ -77,7 +77,7 @@ COVER_FILENAMES = (
 # Визуальные размеры намеренно умеренные: никаких гигантских плиток на 27-дюймовом
 # мониторе, но при этом элементы управления остаются удобными на ноутбуке.
 SIDEBAR_WIDTH = 240
-BOTTOM_PLAYER_HEIGHT = 92
+BOTTOM_PLAYER_HEIGHT = 100
 ALBUM_CARD_WIDTH = 230
 ALBUM_CARD_HEIGHT = 314
 ALBUM_COVER_SIZE = 210
@@ -2088,7 +2088,7 @@ class IconButton(QToolButton):
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip(tooltip)
         self.setCheckable(checkable)
-        self.setFont(QFont("Segoe UI Symbol", 16))
+        self.setFont(QFont("Segoe UI Symbol", 18))
 
 
 # ============================================================================
@@ -2180,8 +2180,8 @@ class Sidebar(QFrame):
         button.setAutoExclusive(True)
         button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        button.setMinimumHeight(46)
-        button.setFont(QFont("Segoe UI", 12))
+        button.setMinimumHeight(50)
+        button.setFont(QFont("Segoe UI", 13))
         return button
 
     def set_active(self, button: Optional[QToolButton]) -> None:
@@ -2213,7 +2213,7 @@ class SearchHeader(QWidget):
 
         self.icon = QLabel("⌕")
         self.icon.setObjectName("SearchIcon")
-        self.icon.setFixedWidth(24)
+        self.icon.setFixedWidth(30)
         self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self.icon)
 
@@ -2221,7 +2221,7 @@ class SearchHeader(QWidget):
         self.edit.setObjectName("SearchField")
         self.edit.setPlaceholderText("Поиск по трекам, исполнителям, альбомам и жанрам")
         self.edit.setClearButtonEnabled(True)
-        self.edit.setFixedHeight(46)
+        self.edit.setFixedHeight(52)
         root.addWidget(self.edit, 1)
 
         self.status = QLabel("")
@@ -2260,10 +2260,10 @@ class SortBar(QWidget):
         self.combo = QComboBox()
         self.combo.setObjectName("Combo")
         self.combo.addItems(items)
-        self.combo.setMinimumWidth(138)
+        self.combo.setMinimumWidth(150)
         root.addWidget(self.combo)
 
-        self.direction = IconButton("↑", 38, "По возрастанию / по убыванию", True)
+        self.direction = IconButton("↑", 44, "По возрастанию / по убыванию", True)
         root.addWidget(self.direction)
 
         self.combo.currentTextChanged.connect(self._emit)
@@ -2499,10 +2499,10 @@ class AlbumCard(QFrame):
         self.cover = AsyncCover(ALBUM_COVER_SIZE, 14, cover_wrap)
         cover_layout.addWidget(self.cover)
 
-        self.play_button = IconButton("▶", 48, "Играть альбом", parent=cover_wrap)
+        self.play_button = IconButton("▶", 52, "Играть альбом", parent=cover_wrap)
         self.play_button.setObjectName("AlbumPlayButton")
         self.play_button.setVisible(False)
-        self.play_button.move(ALBUM_COVER_SIZE - 58, ALBUM_COVER_SIZE - 58)
+        self.play_button.move(ALBUM_COVER_SIZE - 60, ALBUM_COVER_SIZE - 60)
         self.play_button.clicked.connect(lambda: self.play_requested.emit(self.album_id))
         root.addWidget(cover_wrap, alignment=Qt.AlignmentFlag.AlignHCenter)
         self.cover_wrap = cover_wrap
@@ -3258,7 +3258,7 @@ class ListeningHistoryPage(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(48)
+        self.table.verticalHeader().setDefaultSectionSize(54)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -3278,8 +3278,8 @@ class ListeningHistoryPage(QWidget):
         card = QFrame()
         card.setObjectName("HistoryMetricCard")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 14, 18, 16)
-        layout.setSpacing(7)
+        layout.setContentsMargins(22, 18, 22, 20)
+        layout.setSpacing(9)
         label = QLabel(caption)
         label.setObjectName("HistoryMetricCaption")
         metric = QLabel(value)
@@ -3472,7 +3472,7 @@ class PlayerBar(QFrame):
 
         left = QHBoxLayout()
         left.setSpacing(12)
-        self.cover = AsyncCover(58, 9)
+        self.cover = AsyncCover(62, 12)
         left.addWidget(self.cover)
 
         info = QVBoxLayout()
@@ -3492,8 +3492,8 @@ class PlayerBar(QFrame):
         left.addLayout(info)
         left_widget = QWidget()
         left_widget.setLayout(left)
-        left_widget.setMinimumWidth(290)
-        left_widget.setMaximumWidth(370)
+        left_widget.setMinimumWidth(270)
+        left_widget.setMaximumWidth(350)
         root.addWidget(left_widget)
 
         center = QVBoxLayout()
@@ -3503,25 +3503,25 @@ class PlayerBar(QFrame):
         controls.setSpacing(7)
         controls.addStretch()
 
-        self.shuffle_btn = IconButton("⤨", 36, "Случайный порядок", True)
+        self.shuffle_btn = IconButton("⤨", 40, "Случайный порядок", True)
         self.shuffle_btn.setObjectName("ShuffleButton")
         self.shuffle_btn.toggled.connect(self.shuffle.emit)
         controls.addWidget(self.shuffle_btn)
 
-        self.previous_btn = IconButton("⏮", 38, "Предыдущий трек")
+        self.previous_btn = IconButton("⏮", 40, "Предыдущий трек")
         self.previous_btn.clicked.connect(self.previous.emit)
         controls.addWidget(self.previous_btn)
 
-        self.play_btn = IconButton("▶", 50, "Воспроизведение / пауза")
+        self.play_btn = IconButton("▶", 54, "Воспроизведение / пауза")
         self.play_btn.setObjectName("PlayButton")
         self.play_btn.clicked.connect(self.play_pause.emit)
         controls.addWidget(self.play_btn)
 
-        self.next_btn = IconButton("⏭", 38, "Следующий трек")
+        self.next_btn = IconButton("⏭", 40, "Следующий трек")
         self.next_btn.clicked.connect(self.next.emit)
         controls.addWidget(self.next_btn)
 
-        self.repeat_btn = IconButton("↻", 36, "Повтор: выключен")
+        self.repeat_btn = IconButton("↻", 40, "Повтор: выключен")
         self.repeat_btn.clicked.connect(self.repeat.emit)
         controls.addWidget(self.repeat_btn)
         controls.addStretch()
@@ -3531,7 +3531,7 @@ class PlayerBar(QFrame):
         progress_row.setSpacing(8)
         self.time = QLabel("00:00")
         self.time.setObjectName("TinyText")
-        self.time.setFixedWidth(45)
+        self.time.setFixedWidth(50)
         self.time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         progress_row.addWidget(self.time)
 
@@ -3544,7 +3544,7 @@ class PlayerBar(QFrame):
 
         self.duration = QLabel("00:00")
         self.duration.setObjectName("TinyText")
-        self.duration.setFixedWidth(45)
+        self.duration.setFixedWidth(50)
         progress_row.addWidget(self.duration)
         center.addLayout(progress_row)
         root.addLayout(center, 1)
@@ -3558,13 +3558,13 @@ class PlayerBar(QFrame):
         self.volume_slider.setObjectName("VolumeSlider")
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(70)
-        self.volume_slider.setFixedWidth(110)
+        self.volume_slider.setFixedWidth(116)
         self.volume_slider.valueChanged.connect(self._volume_changed)
         right.addWidget(self.volume_slider)
 
         self.queue = QComboBox()
         self.queue.setObjectName("QueueCombo")
-        self.queue.setMinimumWidth(230)
+        self.queue.setMinimumWidth(220)
         self.queue.currentIndexChanged.connect(self._queue_changed)
         right.addWidget(self.queue)
         root.addLayout(right)
@@ -3692,7 +3692,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.setMinimumSize(1180, 720)
+        self.setMinimumSize(1200, 720)
 
         self.settings = load_settings()
         configured_folder = configured_music_folder(self.settings)
@@ -4720,8 +4720,9 @@ class MainWindow(QMainWindow):
                 background: #262628;
                 color: white;
                 border: 1px solid #3a3a3d;
-                border-radius: 8px;
-                padding: 7px 9px;
+                border-radius: 11px;
+                padding: 9px 12px;
+                font-size: 13px;
             }}
             #Sidebar {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -4730,40 +4731,41 @@ class MainWindow(QMainWindow):
             }}
             #LogoMark {{
                 color: {ACCENT};
-                font-size: 28px;
-                font-weight: 700;
+                font-size: 30px;
+                font-weight: 750;
             }}
             #LogoText {{
                 color: white;
                 font-weight: 700;
-                letter-spacing: 2.2px;
-                font-size: 13px;
+                letter-spacing: 2.4px;
+                font-size: 14px;
             }}
-            #SidebarSub {{ color: {DIM}; font-size: 10px; }}
+            #SidebarSub {{ color: {DIM}; font-size: 11px; }}
             #SidebarCaption {{
                 color: #65656a;
-                font-size: 9px;
-                font-weight: 700;
-                letter-spacing: 1.4px;
+                font-size: 10px;
+                font-weight: 750;
+                letter-spacing: 1.3px;
                 padding: 0 10px 5px 10px;
             }}
             #SidebarPath {{
-                color: #6f6f74;
-                font-size: 9px;
+                color: #85858d;
+                font-size: 10px;
                 padding: 7px 10px 0 42px;
             }}
             #SidebarStatus {{
-                color: #5f8c36;
-                font-size: 9px;
+                color: #77a947;
+                font-size: 10px;
                 padding: 0 10px;
             }}
             #SideButton {{
                 background: transparent;
                 border: 1px solid transparent;
-                border-radius: 11px;
-                color: #96969c;
+                border-radius: 14px;
+                color: #a7a7af;
                 text-align: left;
-                padding: 0 14px;
+                padding: 0 16px;
+                font-size: 13px;
             }}
             #SideButton:hover {{
                 background: #171719;
@@ -4779,32 +4781,32 @@ class MainWindow(QMainWindow):
             }}
             #Content {{ background: transparent; }}
             #PlayerBarContainer, #LibraryPage {{ background: transparent; }}
-            #SearchIcon {{ color: #77777c; font-size: 22px; }}
+            #SearchIcon {{ color: #9999a1; font-size: 26px; }}
             #SearchField {{
                 background: #1c1c21;
                 border: 1px solid transparent;
-                border-radius: 20px;
+                border-radius: 25px;
                 color: white;
-                padding: 0 16px;
+                padding: 0 20px;
                 selection-background-color: #3a3a3d;
-                font-size: 13px;
+                font-size: 14px;
             }}
             #SearchField:hover {{ background: #1b1b1c; }}
             #SearchField:focus {{
                 background: #1c1c1f;
                 border-color: #4a4429;
             }}
-            #HeaderStatus {{ color: #66666b; font-size: 10px; min-width: 70px; }}
-            #PageTitle {{ font-size: 29px; font-weight: 800; color: white; }}
+            #HeaderStatus {{ color: #85858d; font-size: 11px; min-width: 76px; }}
+            #PageTitle {{ font-size: 30px; font-weight: 800; color: white; }}
             #PageTitleLarge {{ font-size: 32px; font-weight: 800; color: white; }}
-            #SectionTitle {{ font-size: 19px; font-weight: 750; color: white; }}
-            #MutedText {{ color: #b9b9bf; font-size: 11px; }}
-            #DimText {{ color: #8d8d94; font-size: 11px; }}
+            #SectionTitle {{ font-size: 20px; font-weight: 750; color: white; }}
+            #MutedText {{ color: #c2c2c9; font-size: 12px; }}
+            #DimText {{ color: #a1a1a9; font-size: 12px; }}
             #AccentCaption {{
                 color: {ACCENT};
-                font-size: 9px;
+                font-size: 10px;
                 font-weight: 800;
-                letter-spacing: 1.3px;
+                letter-spacing: 1.4px;
             }}
             #HeroTitle {{ font-size: 26px; font-weight: 800; color: white; }}
             #HeroArtist {{ font-size: 14px; font-weight: 650; color: #ececef; }}
@@ -4814,19 +4816,19 @@ class MainWindow(QMainWindow):
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #302b1d, stop:0.38 #222124, stop:1 #19191d);
                 border: 1px solid #494126;
-                border-radius: 22px;
+                border-radius: 24px;
             }}
             #AlbumHero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #2c291e, stop:0.48 #202024, stop:1 #18181c);
                 border: 1px solid #443d27;
-                border-radius: 22px;
+                border-radius: 24px;
             }}
             #AlbumCard {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #222227, stop:1 #19191e);
                 border: 1px solid #393941;
-                border-radius: 20px;
+                border-radius: 22px;
             }}
             #AlbumCard:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -4840,8 +4842,8 @@ class MainWindow(QMainWindow):
                 background: {ACCENT};
                 color: #161616;
                 border: none;
-                border-radius: 24px;
-                font-size: 17px;
+                border-radius: 26px;
+                font-size: 18px;
                 font-weight: 800;
             }}
             #AlbumPlayButton:hover {{ background: {ACCENT_HOVER}; }}
@@ -4849,8 +4851,9 @@ class MainWindow(QMainWindow):
                 background: {ACCENT};
                 color: #181818;
                 border: none;
-                border-radius: 12px;
-                padding: 10px 17px;
+                border-radius: 16px;
+                padding: 12px 20px;
+                font-size: 14px;
                 font-weight: 750;
             }}
             #AccentButton:hover {{ background: {ACCENT_HOVER}; }}
@@ -4860,8 +4863,9 @@ class MainWindow(QMainWindow):
                     stop:0 #ffeb53, stop:0.55 #ffd928, stop:1 #ffb94b);
                 color: #19160a;
                 border: 1px solid #fff07b;
-                border-radius: 13px;
-                padding: 10px 16px;
+                border-radius: 16px;
+                padding: 12px 19px;
+                font-size: 14px;
                 font-weight: 800;
             }}
             #WaveButton:hover {{
@@ -4874,8 +4878,9 @@ class MainWindow(QMainWindow):
                 background: #252528;
                 color: #f4f4f5;
                 border: 1px solid #303034;
-                border-radius: 12px;
-                padding: 9px 14px;
+                border-radius: 15px;
+                padding: 11px 17px;
+                font-size: 13px;
             }}
             #GhostButton:hover {{
                 background: #34332b;
@@ -4886,9 +4891,10 @@ class MainWindow(QMainWindow):
                 background: #181819;
                 color: #e9e9eb;
                 border: 1px solid #28282a;
-                border-radius: 10px;
-                padding: 6px 10px;
-                min-height: 28px;
+                border-radius: 13px;
+                padding: 8px 12px;
+                min-height: 34px;
+                font-size: 13px;
             }}
             #Combo:hover, #QueueCombo:hover {{ border-color: #38383b; }}
             #Combo QAbstractItemView, #QueueCombo QAbstractItemView {{
@@ -4900,25 +4906,25 @@ class MainWindow(QMainWindow):
             }}
             #IconButton {{
                 background: transparent;
-                color: #9a9a9f;
-                border: none;
-                border-radius: 19px;
+                color: #b3b3bb;
+                border: 1px solid transparent;
+                border-radius: 22px;
             }}
-            #IconButton:hover {{ background: #242426; color: white; }}
-            #IconButton:checked {{ background: #2a2926; color: {ACCENT}; }}
+            #IconButton:hover {{ background: #29292f; border-color: #3a3a42; color: white; }}
+            #IconButton:checked {{ background: #332e1b; border-color: #665a2a; color: {ACCENT_HOVER}; }}
             #IconButton[repeatActive="true"] {{ color: {ACCENT}; }}
             #IconButton[repeatOne="true"] {{ background: #2a2926; color: {ACCENT}; }}
             #PlayButton {{
                 background: {ACCENT};
                 color: #131313;
                 border: 1px solid #f2d300;
-                border-radius: 25px;
-                font-size: 18px;
+                border-radius: 28px;
+                font-size: 20px;
                 font-weight: 800;
             }}
             #PlayButton:hover {{ background: {ACCENT_HOVER}; }}
             #PlayButton:pressed {{ background: {ACCENT_PRESSED}; }}
-            #TableHeader {{ color: #646469; font-size: 9px; text-transform: uppercase; letter-spacing: .7px; }}
+            #TableHeader {{ color: #77777f; font-size: 10px; text-transform: uppercase; letter-spacing: .8px; }}
             #TrackRow {{
                 background: transparent;
                 border: 1px solid transparent;
@@ -4941,14 +4947,15 @@ class MainWindow(QMainWindow):
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #28261c, stop:0.20 #1d1d20, stop:0.72 #19191d, stop:1 #211e14);
                 border: 1px solid #554a26;
-                border-radius: 18px;
+                border-radius: 22px;
             }}
             #ShuffleButton {{
                 background: transparent;
                 color: #c1bfae;
                 border: 1px solid transparent;
-                border-radius: 18px;
-                font-weight: 700;
+                border-radius: 21px;
+                font-size: 19px;
+                font-weight: 750;
             }}
             #ShuffleButton:hover {{
                 background: #2c2819;
@@ -4961,31 +4968,31 @@ class MainWindow(QMainWindow):
                 border: 1px solid #fff078;
             }}
             #ShuffleButton:checked:hover {{ background: {ACCENT_HOVER}; }}
-            #TinyText {{ color: #808085; font-size: 9px; }}
-            #VolumeIcon {{ color: #8a8a90; font-size: 15px; }}
+            #TinyText {{ color: #aaaab2; font-size: 10px; font-weight: 600; }}
+            #VolumeIcon {{ color: #b1b1b8; font-size: 19px; }}
             #ProgressSlider {{
-                min-height: 24px;
-                padding: 0;
+                min-height: 28px;
+                padding: 0 2px;
             }}
             #ProgressSlider::groove:horizontal {{
                 background: #39383a;
                 border: 1px solid #514b35;
-                height: 6px;
-                border-radius: 4px;
+                height: 8px;
+                border-radius: 5px;
             }}
             #ProgressSlider::sub-page:horizontal {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #e4c900, stop:1 {ACCENT_HOVER});
-                height: 6px;
-                border-radius: 4px;
+                height: 8px;
+                border-radius: 5px;
             }}
             #ProgressSlider::handle:horizontal {{
                 background: {ACCENT};
                 border: 2px solid #141416;
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
                 margin: -6px 0;
-                border-radius: 9px;
+                border-radius: 10px;
             }}
             #ProgressSlider:hover::handle:horizontal {{
                 background: {ACCENT_HOVER};
@@ -4994,52 +5001,54 @@ class MainWindow(QMainWindow):
             #ProgressSlider:disabled::handle:horizontal {{
                 background: #67676b;
             }}
-            #VolumeSlider::groove:horizontal {{ background: #2c2c2f; height: 4px; border-radius: 2px; }}
-            #VolumeSlider::sub-page:horizontal {{ background: #bdbdc1; height: 4px; border-radius: 2px; }}
-            #VolumeSlider::handle:horizontal {{ background: white; width: 10px; height: 10px; margin: -3px 0; border-radius: 5px; }}
+            #VolumeSlider::groove:horizontal {{ background: #3d3d42; height: 6px; border-radius: 4px; }}
+            #VolumeSlider::sub-page:horizontal {{ background: {ACCENT}; height: 6px; border-radius: 4px; }}
+            #VolumeSlider::handle:horizontal {{ background: white; border: 2px solid #24211a; width: 14px; height: 14px; margin: -4px 0; border-radius: 7px; }}
             #ScrollArea {{ border: none; background: transparent; }}
-            QScrollBar:vertical {{ background: transparent; width: 7px; margin: 2px; }}
-            QScrollBar::handle:vertical {{ background: #303034; border-radius: 4px; min-height: 45px; }}
+            QScrollBar:vertical {{ background: transparent; width: 9px; margin: 3px; }}
+            QScrollBar::handle:vertical {{ background: #3c3c42; border-radius: 5px; min-height: 50px; }}
             QScrollBar::handle:vertical:hover {{ background: #47474b; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
             #HistoryMetricCard {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #302d20, stop:1 #1f1f24);
                 border: 1px solid #494126;
-                border-radius: 18px;
+                border-radius: 22px;
             }}
             #HistoryMetricCaption {{
                 color: #aaaaaf;
-                font-size: 10px;
+                font-size: 11px;
                 font-weight: 750;
-                letter-spacing: 1px;
+                letter-spacing: 1.1px;
             }}
             #HistoryMetricValue {{
                 color: {ACCENT_HOVER};
-                font-size: 24px;
+                font-size: 28px;
                 font-weight: 800;
             }}
             #EmptyState {{
                 color: #a0a0a7;
                 background: #161619;
                 border: 1px dashed #343439;
-                border-radius: 16px;
-                padding: 26px;
+                border-radius: 20px;
+                padding: 30px;
+                font-size: 14px;
             }}
             QTableWidget#HistoryTable {{
                 background: #19191e;
                 alternate-background-color: #202025;
                 color: #f4f4f5;
                 border: 1px solid #36363e;
-                border-radius: 14px;
-                padding: 4px;
+                border-radius: 18px;
+                padding: 6px;
+                font-size: 14px;
                 selection-background-color: #4a4123;
                 selection-color: #ffffff;
                 outline: 0;
             }}
             QTableWidget#HistoryTable::item {{
-                padding: 8px 9px;
-                border-bottom: 1px solid #242428;
+                padding: 10px 12px;
+                border-bottom: 1px solid #2c2c32;
             }}
             QTableWidget#HistoryTable::item:selected {{
                 background: #40391f;
@@ -5050,30 +5059,33 @@ class MainWindow(QMainWindow):
                 color: #c1c1c8;
                 border: none;
                 border-bottom: 1px solid #45454d;
-                padding: 11px 10px;
-                font-size: 10px;
-                font-weight: 700;
+                padding: 13px 12px;
+                font-size: 11px;
+                font-weight: 750;
             }}
-            #StatusBar {{ background: #111114; color: #a0a0a8; border-top: 1px solid #303036; }}
+            #StatusBar {{ background: #111114; color: #b5b5bd; border-top: 1px solid #35353c; font-size: 12px; padding: 4px 10px; }}
             #ScanOverlay {{ background: rgba(8, 8, 9, 230); }}
-            #ScanCard {{ background: #19191b; border: 1px solid #333336; border-radius: 18px; }}
+            #ScanCard {{ background: #1d1d21; border: 1px solid #44444c; border-radius: 22px; }}
             #ScanTitle {{ font-size: 21px; font-weight: 800; }}
             QProgressBar {{
-                background: #29292b;
-                border: none;
-                border-radius: 5px;
+                background: #29292f;
+                border: 1px solid #403e34;
+                border-radius: 7px;
                 text-align: center;
-                height: 10px;
+                height: 12px;
                 color: #151515;
+                font-size: 10px;
             }}
             QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
             QMenu {{
-                background: #1b1b1d;
+                background: #202024;
                 color: white;
-                border: 1px solid #353538;
-                padding: 5px;
+                border: 1px solid #45454d;
+                border-radius: 12px;
+                padding: 7px;
+                font-size: 13px;
             }}
-            QMenu::item {{ padding: 8px 22px; border-radius: 6px; }}
+            QMenu::item {{ padding: 10px 24px; border-radius: 8px; }}
             QMenu::item:selected {{ background: #2c2c2f; color: {ACCENT}; }}
             """
         )
