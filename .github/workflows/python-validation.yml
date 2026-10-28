@@ -41,3 +41,18 @@ jobs:
 
       - name: Smoke-test module imports
         run: python -c "import main; print('main.py imported successfully')"
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pyinstaller
+
+      - name: Build Windows GUI executable
+        run: python -m PyInstaller --noconfirm --clean --distpath dist-staging --workpath build-staging "Local Music.spec"
+
+      - name: Verify packaged executable
+        shell: pwsh
+        run: |
+          $exe = 'dist-staging\YandexMusicLocal\YandexMusicLocal.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw "PyInstaller did not produce the expected GUI executable: $exe"
+          }
+          Write-Host "Executable package created: $exe" -ForegroundColor Green
