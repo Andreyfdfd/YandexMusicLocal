@@ -121,6 +121,23 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(self.get_tracks(), before)
 
 
+    def test_cover_memory_cache_uses_byte_budget_and_lru(self):
+        cache = main.CoverMemoryCache(max_bytes=1024)
+        image_a = main.QImage(10, 10, main.QImage.Format.Format_RGBA8888)
+        image_b = main.QImage(10, 10, main.QImage.Format.Format_RGBA8888)
+        image_c = main.QImage(10, 10, main.QImage.Format.Format_RGBA8888)
+
+        self.assertFalse(image_a.isNull())
+        cache.put("a.jpg", 10, image_a)
+        cache.put("b.jpg", 10, image_b)
+        self.assertIsNotNone(cache.get("a.jpg", 10))  # A becomes most recently used.
+        cache.put("c.jpg", 10, image_c)              # B should be evicted.
+
+        self.assertIsNotNone(cache.get("a.jpg", 10))
+        self.assertIsNone(cache.get("b.jpg", 10))
+        self.assertIsNotNone(cache.get("c.jpg", 10))
+        self.assertLessEqual(cache._total_bytes, cache.max_bytes)
+
     def test_legacy_schema_migrates_before_indexes_created(self):
         conn = sqlite3.connect(main.DB_PATH)
         try:
