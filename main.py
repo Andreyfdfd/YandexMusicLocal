@@ -2235,12 +2235,22 @@ class HomePage(QWidget):
         width = max(750, self.scroll.viewport().width())
         self._columns = max(2, min(8, (width - 24) // (ALBUM_CARD_WIDTH + 20)))
         self._created = 0
+
+        # Reserve the full scroll height without creating a QWidget for every
+        # album. Cards are materialized only near the viewport as the user scrolls.
+        row_step = ALBUM_CARD_HEIGHT + self.grid.verticalSpacing()
+        row_count = (len(self._albums) + self._columns - 1) // self._columns
+        self.grid_widget.setMinimumHeight(
+            max(1, row_count * row_step + self.grid.contentsMargins().top()
+                + self.grid.contentsMargins().bottom())
+        )
         self._append_album_batch()
+        QTimer.singleShot(0, self._update_visible_covers)
 
     def _append_album_batch(self) -> None:
         if self._created >= len(self._albums):
-            QTimer.singleShot(0, self._update_visible_covers)
             return
+
         end = min(len(self._albums), self._created + ALBUM_BATCH)
         for pos in range(self._created, end):
             card = AlbumCard(self._albums[pos])
@@ -2249,20 +2259,31 @@ class HomePage(QWidget):
             self.grid.addWidget(card, pos // self._columns, pos % self._columns)
             self.cards.append(card)
         self._created = end
-        if self._created < len(self._albums):
-            QTimer.singleShot(0, self._append_album_batch)
-        else:
-            QTimer.singleShot(0, self._update_visible_covers)
 
     def _update_visible_covers(self) -> None:
-        if not self.cards:
+        if not self._albums:
             return
-        value = self.scroll.verticalScrollBar().value()
-        top = value - 500
-        bottom = value + self.scroll.viewport().height() + 900
-        for card in self.cards:
-            if card.y() + card.height() >= top and card.y() <= bottom:
-                card.ensure_cover()
+
+        bar = self.scroll.verticalScrollBar()
+        value = max(0, bar.value())
+        viewport_height = max(1, self.scroll.viewport().height())
+        row_step = max(1, ALBUM_CARD_HEIGHT + self.grid.verticalSpacing())
+
+        first_row = max(0, value // row_step - 2)
+        last_row = (value + viewport_height) // row_step + 3
+        # Include a few rows ahead so scrolling does not reveal blank cards.
+        needed_end = min(len(self._albums), (last_row + 1) * self._columns)
+
+        while self._created < needed_end:
+            before = self._created
+            self._append_album_batch()
+            if self._created == before:
+                break
+
+        first_index = first_row * self._columns
+        last_index = min(self._created, needed_end)
+        for card in self.cards[first_index:last_index]:
+            card.ensure_cover()
 
     def set_now_playing(self, track: Optional[dict]) -> None:
         self.now.set_track(track)
