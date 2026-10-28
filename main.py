@@ -2896,8 +2896,144 @@ class LibraryPage(QWidget):
 
 
 # ============================================================================
-# НИЖНИЙ ПЛЕЕР
+# ИСТОРИЯ И СТАТИСТИКА ПРОСЛУШИВАНИЯ
 # ============================================================================
+
+
+class ListeningHistoryPage(QWidget):
+    """Local listening history and lifetime statistics, stored in SQLite."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(28, 10, 28, 24)
+        root.setSpacing(18)
+
+        heading = QHBoxLayout()
+        title_box = QVBoxLayout()
+        title_box.setSpacing(3)
+        title = QLabel("История и статистика")
+        title.setObjectName("PageTitle")
+        title_box.addWidget(title)
+        self.subtitle = QLabel("Ваши прослушивания и музыкальные привычки")
+        self.subtitle.setObjectName("MutedText")
+        title_box.addWidget(self.subtitle)
+        heading.addLayout(title_box)
+        heading.addStretch()
+
+        self.mode = QComboBox()
+        self.mode.setObjectName("Combo")
+        self.mode.addItems(["История", "Треки", "Исполнители", "Альбомы"])
+        self.mode.setMinimumWidth(170)
+        self.mode.currentTextChanged.connect(self.refresh)
+        heading.addWidget(self.mode)
+        refresh_button = QPushButton("↻  Обновить")
+        refresh_button.setObjectName("GhostButton")
+        refresh_button.clicked.connect(self.refresh)
+        heading.addWidget(refresh_button)
+        root.addLayout(heading)
+
+        metrics = QHBoxLayout()
+        metrics.setSpacing(12)
+        self.total_time = self._metric_card("ВСЕГО ПРОСЛУШАНО", "—")
+        self.total_sessions = self._metric_card("СЕССИЙ", "0")
+        self.unique_tracks = self._metric_card("РАЗНЫХ ТРЕКОВ", "0")
+        metrics.addWidget(self.total_time[0], 1)
+        metrics.addWidget(self.total_sessions[0], 1)
+        metrics.addWidget(self.unique_tracks[0], 1)
+        root.addLayout(metrics)
+
+        self.table = QTableWidget(0, 4)
+        self.table.setObjectName("HistoryTable")
+        self.table.setHorizontalHeaderLabels(
+            ["Трек / объект", "Исполнитель / альбом", "Время прослушивания", "Последнее прослушивание"]
+        )
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setAlternatingRowColors(False)
+        root.addWidget(self.table, 1)
+
+        self.empty = QLabel("История появится после начала прослушивания")
+        self.empty.setObjectName("EmptyState")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setVisible(False)
+        root.addWidget(self.empty)
+
+    @staticmethod
+    def _metric_card(caption: str, value: str):
+        card = QFrame()
+        card.setObjectName("HistoryMetricCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 16)
+        layout.setSpacing(7)
+        label = QLabel(caption)
+        label.setObjectName("HistoryMetricCaption")
+        metric = QLabel(value)
+        metric.setObjectName("HistoryMetricValue")
+        layout.addWidget(label)
+        layout.addWidget(metric)
+        return card, metric
+
+    @staticmethod
+    def _time_label(value) -> str:
+        if value is None:
+            return "—"
+        try:
+            return datetime.fromtimestamp(float(value)).strftime("%d.%m.%Y  %H:%M")
+        except (ValueError, TypeError, OSError, OverflowError):
+            return "—"
+
+    def refresh(self, *_args) -> None:
+        try:
+            summary = fetch_listening_summary()
+            rows = fetch_listening_view(self.mode.currentText())
+        except Exception as exc:
+            self.subtitle.setText(f"Не удалось прочитать статистику: {exc}")
+            return
+
+        self.total_time[1].setText(format_listening_ms(summary["listened_ms"]))
+        self.total_sessions[1].setText(f'{summary["sessions"]:,}'.replace(",", " "))
+        self.unique_tracks[1].setText(f'{summary["tracks"]:,}'.replace(",", " "))
+        mode = self.mode.currentText()
+        self.subtitle.setText({
+            "История": "Последние сессии воспроизведения",
+            "Треки": "Композиции, отсортированные по суммарному времени прослушивания",
+            "Исполнители": "Общее время по всем прослушанным композициям каждого исполнителя",
+            "Альбомы": "Общее время по всем прослушанным трекам каждого альбома",
+        }.get(mode, "История прослушивания"))
+
+        self.table.setUpdatesEnabled(False)
+        self.table.setRowCount(0)
+        for row in rows:
+            index = self.table.rowCount()
+            self.table.insertRow(index)
+            title = str(row.get("title") or "—")
+            artist = str(row.get("artist") or "")
+            album = str(row.get("album") or "")
+            if mode == "История" and row.get("completed"):
+                title = "✓  " + title
+            details = "  ·  ".join(piece for piece in (artist, album) if piece and piece != "—")
+            listened = format_listening_ms(row.get("listened_ms"))
+            last_played = self._time_label(row.get("last_played"))
+            values = (title, details or "—", listened, last_played)
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if column == 2:
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
+                self.table.setItem(index, column, item)
+        self.table.setUpdatesEnabled(True)
+        self.empty.setVisible(not rows)
+        self.table.setVisible(bool(rows))
 
 
 class SeekSlider(QSlider):
