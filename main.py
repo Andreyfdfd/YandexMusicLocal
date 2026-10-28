@@ -2229,7 +2229,7 @@ class IconButton(QToolButton):
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip(tooltip)
         self.setCheckable(checkable)
-        self.setFont(QFont("Segoe UI Symbol", 18))
+        self.setFont(QFont("Segoe UI Symbol", 20))
 
 
 # ============================================================================
@@ -2401,10 +2401,10 @@ class SortBar(QWidget):
         self.combo = QComboBox()
         self.combo.setObjectName("Combo")
         self.combo.addItems(items)
-        self.combo.setMinimumWidth(150)
+        self.combo.setMinimumWidth(162)
         root.addWidget(self.combo)
 
-        self.direction = IconButton("↑", 44, "По возрастанию / по убыванию", True)
+        self.direction = IconButton("↑", 48, "По возрастанию / по убыванию", True)
         root.addWidget(self.direction)
 
         self.combo.currentTextChanged.connect(self._emit)
@@ -3227,7 +3227,7 @@ class LibraryPage(QWidget):
 
         self.genre_combo = QComboBox()
         self.genre_combo.setObjectName("Combo")
-        self.genre_combo.setMinimumWidth(148)
+        self.genre_combo.setMinimumWidth(164)
         self.genre_combo.addItem("Все жанры")
         try:
             self.genre_combo.addItems(fetch_genres())
@@ -3619,7 +3619,7 @@ class PlayerBar(QFrame):
 
         left = QHBoxLayout()
         left.setSpacing(12)
-        self.cover = AsyncCover(62, 12)
+        self.cover = AsyncCover(68, 14)
         left.addWidget(self.cover)
 
         info = QVBoxLayout()
@@ -3650,25 +3650,25 @@ class PlayerBar(QFrame):
         controls.setSpacing(7)
         controls.addStretch()
 
-        self.shuffle_btn = IconButton("⤨", 40, "Случайный порядок", True)
+        self.shuffle_btn = IconButton("⤨", 42, "Случайный порядок", True)
         self.shuffle_btn.setObjectName("ShuffleButton")
         self.shuffle_btn.toggled.connect(self.shuffle.emit)
         controls.addWidget(self.shuffle_btn)
 
-        self.previous_btn = IconButton("⏮", 40, "Предыдущий трек")
+        self.previous_btn = IconButton("⏮", 42, "Предыдущий трек")
         self.previous_btn.clicked.connect(self.previous.emit)
         controls.addWidget(self.previous_btn)
 
-        self.play_btn = IconButton("▶", 54, "Воспроизведение / пауза")
+        self.play_btn = IconButton("▶", 58, "Воспроизведение / пауза")
         self.play_btn.setObjectName("PlayButton")
         self.play_btn.clicked.connect(self.play_pause.emit)
         controls.addWidget(self.play_btn)
 
-        self.next_btn = IconButton("⏭", 40, "Следующий трек")
+        self.next_btn = IconButton("⏭", 42, "Следующий трек")
         self.next_btn.clicked.connect(self.next.emit)
         controls.addWidget(self.next_btn)
 
-        self.repeat_btn = IconButton("↻", 40, "Повтор: выключен")
+        self.repeat_btn = IconButton("↻", 42, "Повтор: выключен")
         self.repeat_btn.clicked.connect(self.repeat.emit)
         controls.addWidget(self.repeat_btn)
         controls.addStretch()
@@ -3705,13 +3705,13 @@ class PlayerBar(QFrame):
         self.volume_slider.setObjectName("VolumeSlider")
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(70)
-        self.volume_slider.setFixedWidth(116)
+        self.volume_slider.setFixedWidth(122)
         self.volume_slider.valueChanged.connect(self._volume_changed)
         right.addWidget(self.volume_slider)
 
         self.queue = QComboBox()
         self.queue.setObjectName("QueueCombo")
-        self.queue.setMinimumWidth(220)
+        self.queue.setMinimumWidth(228)
         self.queue.currentIndexChanged.connect(self._queue_changed)
         right.addWidget(self.queue)
         root.addLayout(right)
