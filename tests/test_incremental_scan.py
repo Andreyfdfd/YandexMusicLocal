@@ -315,5 +315,67 @@ class IncrementalScannerTests(unittest.TestCase):
             writer.shutdown()
             writer._thread.join(timeout=1.0)
 
+
+    def test_history_aggregates_repeat_plays_and_orders_artists_by_recency(self):
+        main.ensure_database_schema()
+
+        repeated_track = {
+            "file_path": str((self.root / "shared-track.mp3").resolve()),
+            "track_name": "Song A",
+            "artist": "Artist A",
+            "album": "Album A",
+        }
+        other_track = {
+            "file_path": str((self.root / "other-track.mp3").resolve()),
+            "track_name": "Song B",
+            "artist": "Artist B",
+            "album": "Album B",
+        }
+
+        first = main.start_listening_session(repeated_track)
+        main.update_listening_session(first, 600_000, finished=True)
+        second = main.start_listening_session(repeated_track)
+        main.update_listening_session(second, 600_000, finished=True, completed=True)
+        third = main.start_listening_session(other_track)
+        main.update_listening_session(third, 300_000, finished=True)
+
+        # Simulate the same track being played once earlier and again recently.
+        conn = sqlite3.connect(main.DB_PATH)
+        try:
+            conn.execute(
+                "UPDATE listening_sessions SET started_at=? WHERE id=?",
+                (100.0, first),
+            )
+            conn.execute(
+                "UPDATE listening_sessions SET started_at=? WHERE id=?",
+                (300.0, second),
+            )
+            conn.execute(
+                "UPDATE listening_sessions SET started_at=? WHERE id=?",
+                (200.0, third),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        history = main.fetch_listening_view("История")
+        song_a = [row for row in history if row["title"] == "Song A"]
+        self.assertEqual(len(song_a), 1)
+        self.assertEqual(song_a[0]["sessions"], 2)
+        self.assertEqual(song_a[0]["listened_ms"], 1_200_000)
+        self.assertEqual(song_a[0]["last_played"], 300.0)
+
+        artists = main.fetch_listening_view("Исполнители")
+        self.assertEqual([row["title"] for row in artists], ["Artist A", "Artist B"])
+        self.assertEqual(artists[0]["listened_ms"], 1_200_000)
+        self.assertEqual(artists[0]["last_played"], 300.0)
+
+        artist_tracks = main.fetch_artist_track_history("Artist A")
+        self.assertEqual(len(artist_tracks), 1)
+        self.assertEqual(artist_tracks[0]["title"], "Song A")
+        self.assertEqual(artist_tracks[0]["sessions"], 2)
+        self.assertEqual(artist_tracks[0]["listened_ms"], 1_200_000)
+        self.assertEqual(artist_tracks[0]["last_played"], 300.0)
+
 if __name__ == "__main__":
     unittest.main()
