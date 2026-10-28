@@ -1559,7 +1559,10 @@ def fetch_all_tracks(
         if genre != "Все жанры":
             sql += " WHERE t.genre = ?"
             args.append(genre)
-        sql += f" ORDER BY {order} {direction}"
+        if sort_mode == "Время прослушивания":
+            sql += f" ORDER BY {order.split(',')[0]} {direction}, t.track_name COLLATE NOCASE ASC"
+        else:
+            sql += f" ORDER BY {order} {direction}"
         rows = conn.execute(sql, args).fetchall()
     finally:
         conn.close()
@@ -1607,7 +1610,10 @@ def search_tracks(
     try:
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
-        sql += f" ORDER BY {order} {direction}"
+        if sort_mode == "Время прослушивания":
+            sql += f" ORDER BY {order.split(',')[0]} {direction}, t.track_name COLLATE NOCASE ASC"
+        else:
+            sql += f" ORDER BY {order} {direction}"
         rows = conn.execute(sql, args).fetchall()
     finally:
         conn.close()
@@ -1678,7 +1684,11 @@ def fetch_album_info(album_id: int) -> Optional[dict]:
     conn = db_connect()
     try:
         row = conn.execute(
-            "SELECT id, artist, album_name, year, cover_path FROM albums WHERE id=?",
+            """SELECT id, artist, album_name, year, cover_path,
+                      (SELECT COALESCE(SUM(ls.listened_ms), 0)
+                       FROM listening_sessions ls
+                       WHERE ls.artist=albums.artist AND ls.album=albums.album_name)
+               FROM albums WHERE id=?""",
             (album_id,),
         ).fetchone()
     finally:
@@ -1691,6 +1701,7 @@ def fetch_album_info(album_id: int) -> Optional[dict]:
         "album": safe_text(row[2], "Без названия"),
         "year": row[3],
         "cover_path": row[4] or "",
+        "listened_ms": int(row[5] or 0),
     }
 
 
@@ -2744,7 +2755,11 @@ class AlbumPage(QWidget):
 
         self.title.setText(info["album"])
         self.artist.setText(info["artist"])
-        self.details.setText(f"{info.get('year') or 'Год не указан'}  •  {len(self.tracks)} треков")
+        listened_ms = int(info.get("listened_ms") or 0)
+        played_hint = f"  •  прослушано {format_listening_ms(listened_ms)}" if listened_ms else ""
+        self.details.setText(
+            f"{info.get('year') or 'Год не указан'}  •  {len(self.tracks)} треков{played_hint}"
+        )
         cover = info.get("cover_path") or (self.tracks[0].get("cover_path") if self.tracks else "")
         self.cover.load(cover if Path(cover).is_file() else "")
         self.track_list.set_tracks(self.tracks)
