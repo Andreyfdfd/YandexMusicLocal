@@ -1029,15 +1029,26 @@ def save_cover_bytes(data: Optional[bytes]) -> Optional[str]:
         return None
 
 
-def find_folder_cover_bytes(folder: Path) -> Optional[bytes]:
+def find_folder_cover_path(folder: Path) -> Optional[Path]:
+    """Return a nearby image file, if a local sidecar cover exists."""
     for filename in COVER_FILENAMES:
         candidate = folder / filename
         try:
-            if candidate.is_file():
-                return candidate.read_bytes()
+            if candidate.is_file() and candidate.stat().st_size > 100:
+                return candidate
         except OSError:
             continue
     return None
+
+
+def find_folder_cover_bytes(folder: Path) -> Optional[bytes]:
+    candidate = find_folder_cover_path(folder)
+    if candidate is None:
+        return None
+    try:
+        return candidate.read_bytes()
+    except OSError:
+        return None
 
 
 def extract_embedded_cover(path: str, audio_obj=None) -> Optional[bytes]:
@@ -1109,6 +1120,101 @@ def extract_embedded_cover(path: str, audio_obj=None) -> Optional[bytes]:
     except Exception:
         return None
     return None
+
+
+def resolve_track_cover_path(
+    audio_path: str,
+    fallback_cover_path: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve per-track embedded artwork without blocking the GUI thread.
+
+    Artwork is cached by the audio file and nearby-cover fingerprints. Files
+    without embedded art fall back to a nearby image, then the album cover.
+    This function is called only from a background cover task.
+    """
+    fallback = str(fallback_cover_path or "")
+    fallback = fallback if fallback and Path(fallback).is_file() else ""
+    if not audio_path:
+        return fallback or None
+
+    try:
+        source = Path(audio_path).resolve()
+        if not source.is_file():
+            return fallback or None
+        source_stat = source.stat()
+    except (OSError, RuntimeError, ValueError):
+        return fallback or None
+
+    sidecar = find_folder_cover_path(source.parent)
+    sidecar_fingerprint = ""
+    if sidecar is not None:
+        try:
+            sidecar_stat = sidecar.stat()
+            sidecar_fingerprint = (
+                f"{os.path.normcase(str(sidecar.resolve()))}|"
+                f"{sidecar_stat.st_size}|{sidecar_stat.st_mtime_ns}"
+            )
+        except (OSError, RuntimeError, ValueError):
+            sidecar = None
+
+    identity = (
+        f"{os.path.normcase(str(source))}|{source_stat.st_size}|"
+        f"{source_stat.st_mtime_ns}|{sidecar_fingerprint}"
+    )
+    cache_key = hashlib.sha1(identity.encode("utf-8", "surrogatepass")).hexdigest()
+    track_cache = COVER_CACHE_DIR / "track-art"
+    try:
+        track_cache.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return str(sidecar) if sidecar else fallback or None
+
+    cached_cover = track_cache / f"{cache_key}.jpg"
+    no_art_marker = track_cache / f"{cache_key}.none"
+    try:
+        if cached_cover.is_file() and cached_cover.stat().st_size > 100:
+            return str(cached_cover)
+        if no_art_marker.is_file():
+            return str(sidecar) if sidecar else fallback or None
+    except OSError:
+        pass
+
+    artwork = extract_embedded_cover(str(source))
+    if artwork:
+        temp = None
+        try:
+            from io import BytesIO
+
+            temp = track_cache / f"{cache_key}.{threading.get_ident()}.tmp"
+            with Image.open(BytesIO(artwork)) as image:
+                image = ImageOps.exif_transpose(image).convert("RGB")
+                image.thumbnail((1400, 1400), Image.Resampling.LANCZOS)
+                image.save(temp, format="JPEG", quality=92, optimize=True)
+            try:
+                temp.replace(cached_cover)
+            except OSError:
+                # Parallel requests for the same file may populate this key.
+                if not cached_cover.is_file():
+                    raise
+                try:
+                    temp.unlink()
+                except OSError:
+                    pass
+            if cached_cover.is_file() and cached_cover.stat().st_size > 100:
+                return str(cached_cover)
+        except Exception:
+            if temp is not None:
+                try:
+                    temp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    if sidecar is not None:
+        return str(sidecar)
+    try:
+        no_art_marker.write_text("no embedded or sidecar cover", encoding="ascii")
+    except OSError:
+        pass
+    return fallback or None
 
 
 class CoverMemoryCache:
@@ -1260,6 +1366,33 @@ class CoverTask(QRunnable):
             pass
 
 
+class TrackCoverTask(QRunnable):
+    """Extract embedded art for a visible track without blocking Qt's UI thread."""
+
+    def __init__(
+        self,
+        audio_path: str,
+        fallback_path: Optional[str],
+        size: int,
+        token: int,
+    ):
+        super().__init__()
+        self.audio_path = audio_path
+        self.fallback_path = fallback_path
+        self.size = int(size)
+        self.token = int(token)
+        self.signals = WorkerSignals()
+        self.setAutoDelete(True)
+
+    def run(self) -> None:
+        cover_path = resolve_track_cover_path(self.audio_path, self.fallback_path)
+        image = load_qimage_from_cover(cover_path, self.size) if cover_path else None
+        try:
+            self.signals.ready.emit((self.token, image))
+        except RuntimeError:
+            pass
+
+
 class AsyncCover(QLabel):
     def __init__(self, size: int, radius: int = 14, parent=None):
         super().__init__(parent)
@@ -1278,6 +1411,14 @@ class AsyncCover(QLabel):
         if not path:
             return
         task = CoverTask(path, self.size_px, self.token)
+        task.signals.ready.connect(self._on_ready)
+        self.pool.start(task)
+
+    def load_track(self, audio_path: str, fallback_path: Optional[str] = None) -> None:
+        """Load embedded per-track artwork asynchronously, with local fallbacks."""
+        self.token += 1
+        self.setPixmap(make_placeholder(self.size_px, self.radius))
+        task = TrackCoverTask(audio_path, fallback_path, self.size_px, self.token)
         task.signals.ready.connect(self._on_ready)
         self.pool.start(task)
 
@@ -2357,7 +2498,8 @@ class TrackRow(QWidget):
         if self.cover_requested:
             return
         self.cover_requested = True
-        self.cover.load(self._resolved_cover())
+        audio_path = resolve_track_path(self.track, self.music_folder)
+        self.cover.load_track(audio_path, self._resolved_cover())
 
     def set_playing(self, state: bool) -> None:
         state = bool(state)
@@ -2652,7 +2794,12 @@ class NowPlayingHero(QFrame):
             f"Длительность: {format_ms(track.get('duration_ms'))}"
         )
         cover = track.get("cover_path") or ""
-        self.cover.load(cover if Path(cover).is_file() else "")
+        fallback = cover if Path(cover).is_file() else ""
+        audio_path = str(track.get("file_path") or "")
+        if audio_path and Path(audio_path).is_file():
+            self.cover.load_track(audio_path, fallback)
+        else:
+            self.cover.load(fallback)
 
 
 # ============================================================================
@@ -3591,7 +3738,12 @@ class PlayerBar(QFrame):
         self.artist.setText(safe_text(track.get("artist"), "Неизвестный исполнитель"))
         self.album.setText(safe_text(track.get("album"), "—"))
         cover = track.get("cover_path") or ""
-        self.cover.load(cover if Path(cover).is_file() else "")
+        fallback = cover if Path(cover).is_file() else ""
+        audio_path = str(track.get("file_path") or "")
+        if audio_path and Path(audio_path).is_file():
+            self.cover.load_track(audio_path, fallback)
+        else:
+            self.cover.load(fallback)
 
     def set_playing(self, playing: bool) -> None:
         self.play_btn.setText("⏸" if playing else "▶")
