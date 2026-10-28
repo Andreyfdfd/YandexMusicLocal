@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
+*.local.json
+settings.json
+
+# User-specific databases, caches and logs
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-*
+cache/
+caches/
+artwork_cache/
+cover_cache/
+logs/
+*.log
+
+# Music and personal media (do not upload a library to GitHub)
+*.mp3
+*.flac
+*.wav
+*.m4a
+*.aac
+*.ogg
+*.opus
+*.wma
+*.ape
+*.alac
+*.aiff
+*.aif
+*.mid
+*.midi
+
+# Archives, installer/build output and binaries
+*.rar
+*.7z
+*.zip
+*.exe
+*.dll
+*.pyd
+*.msi
+*.msix
+/build/
+/dist/
+/release/
+
+# Preserve legitimate project assets/configuration explicitly in Git when needed.
