@@ -17,7 +17,7 @@ Local Music — локальный музыкальный клиент для Wi
     - горячие клавиши и контекстное меню треков;
     - изменение папки и фоновая пересборка библиотеки;
     - автоматический ярлык на рабочем столе;
-    - поддержка .mp3 и .m4a через VLC.
+    - воспроизведение локальных аудиоформатов через VLC; метаданные через Mutagen.
 
 Зависимости:
     pip install -r requirements.txt
@@ -1099,8 +1099,15 @@ class ScanTask(QRunnable):
 
                     cover_path = folder_cover_cache.get(folder_key)
                     if not cover_path:
+                        # The generic easy-tag view may hide format-specific picture
+                        # structures; reopen only when a cover is actually needed.
+                        audio_for_cover = (
+                            meta.get("_audio")
+                            if path.suffix.lower() in {".mp3", ".m4a"}
+                            else None
+                        )
                         cover_bytes = extract_embedded_cover(
-                            str(path), meta.get("_audio")
+                            str(path), audio_for_cover
                         )
                         if cover_bytes:
                             cover_path = save_cover_bytes(cover_bytes)
