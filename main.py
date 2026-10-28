@@ -72,29 +72,29 @@ COVER_FILENAMES = (
 
 # Визуальные размеры намеренно умеренные: никаких гигантских плиток на 27-дюймовом
 # мониторе, но при этом элементы управления остаются удобными на ноутбуке.
-SIDEBAR_WIDTH = 228
-BOTTOM_PLAYER_HEIGHT = 92
-ALBUM_CARD_WIDTH = 214
-ALBUM_CARD_HEIGHT = 292
-ALBUM_COVER_SIZE = 194
-TRACK_ROW_HEIGHT = 66
+SIDEBAR_WIDTH = 240
+BOTTOM_PLAYER_HEIGHT = 104
+ALBUM_CARD_WIDTH = 230
+ALBUM_CARD_HEIGHT = 314
+ALBUM_COVER_SIZE = 210
+TRACK_ROW_HEIGHT = 72
 TRACK_BATCH = 90
 ALBUM_BATCH = 30
 
 # Палитра — близкая к современной тёмной схеме музыкальных клиентов.
-BG = "#101010"
-BG_DEEP = "#0b0b0c"
-SURFACE = "#181818"
-SURFACE_HOVER = "#222224"
-SURFACE_ACTIVE = "#29292b"
-SURFACE_SOFT = "#141415"
-BORDER = "#2b2b2d"
+BG = "#0e0e10"
+BG_DEEP = "#09090b"
+SURFACE = "#171719"
+SURFACE_HOVER = "#202023"
+SURFACE_ACTIVE = "#28282c"
+SURFACE_SOFT = "#131315"
+BORDER = "#2a2a2e"
 TEXT = "#ffffff"
-MUTED = "#a4a4a8"
-DIM = "#77777c"
-ACCENT = "#ffdd00"
-ACCENT_HOVER = "#ffe63d"
-ACCENT_PRESSED = "#e6c600"
+MUTED = "#aaaaaf"
+DIM = "#78787f"
+ACCENT = "#ffdf00"
+ACCENT_HOVER = "#ffe84a"
+ACCENT_PRESSED = "#e6c900"
 SUCCESS = "#a6df4f"
 DANGER = "#ff6666"
 
@@ -359,6 +359,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QSpacerItem,
     QStyle,
+    QStyleOptionSlider,
 )
 
 from PIL import Image, ImageOps
@@ -1847,6 +1848,20 @@ class TrackRow(QWidget):
         self.favorite.clicked.connect(self._toggle_favorite)
         root.addWidget(self.favorite)
 
+        # Decorative labels and artwork should not compete with the row for
+        # hover/mouse ownership. The favorite button remains interactive.
+        for child in (
+            self.num,
+            self.cover,
+            self.title,
+            self.artist,
+            self.album,
+            self.genre,
+            self.year,
+            self.duration,
+        ):
+            child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
     def _resolved_cover(self) -> str:
         cover = self.track.get("cover_path") or ""
         return cover if Path(cover).is_file() else ""
@@ -1994,6 +2009,7 @@ class AlbumCard(QFrame):
         self.album_id = int(album["id"])
         self.setObjectName("AlbumCard")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedSize(ALBUM_CARD_WIDTH, ALBUM_CARD_HEIGHT)
 
         root = QVBoxLayout(self)
@@ -2008,13 +2024,11 @@ class AlbumCard(QFrame):
         self.cover = AsyncCover(ALBUM_COVER_SIZE, 14, cover_wrap)
         cover_layout.addWidget(self.cover)
 
-        self.play_button = IconButton("▶", 48, "Играть альбом")
+        self.play_button = IconButton("▶", 48, "Играть альбом", parent=cover_wrap)
         self.play_button.setObjectName("AlbumPlayButton")
         self.play_button.setVisible(False)
         self.play_button.move(ALBUM_COVER_SIZE - 58, ALBUM_COVER_SIZE - 58)
         self.play_button.clicked.connect(lambda: self.play_requested.emit(self.album_id))
-        cover_wrap.installEventFilter(self)
-        self.installEventFilter(self)
         root.addWidget(cover_wrap, alignment=Qt.AlignmentFlag.AlignHCenter)
         self.cover_wrap = cover_wrap
 
@@ -2022,6 +2036,7 @@ class AlbumCard(QFrame):
         title_font = QFont("Segoe UI", 10)
         title_font.setWeight(QFont.Weight.DemiBold)
         self.title.setFont(title_font)
+        self.title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         root.addWidget(self.title)
 
         artist = safe_text(album.get("artist"), "Неизвестный исполнитель")
@@ -2033,6 +2048,7 @@ class AlbumCard(QFrame):
         suffix.append(f"{count} тр." if count else "нет треков")
         self.subtitle = ElidedLabel(f"{artist}  •  " + "  •  ".join(suffix), MUTED)
         self.subtitle.setFont(QFont("Segoe UI", 9))
+        self.subtitle.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         root.addWidget(self.subtitle)
 
         self.cover_path = album.get("cover_path") or ""
@@ -2058,8 +2074,15 @@ class AlbumCard(QFrame):
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
-        self.play_button.setVisible(False)
+        # Child widgets can briefly receive the pointer while the user moves
+        # over the artwork. Defer hiding until the pointer is confirmed outside
+        # the whole card; this prevents enter/leave churn and visible flicker.
+        QTimer.singleShot(45, self._sync_hover_controls)
         super().leaveEvent(event)
+
+    def _sync_hover_controls(self) -> None:
+        pointer = self.mapFromGlobal(QCursor.pos())
+        self.set_play_visible(self.isVisible() and self.rect().contains(pointer))
 
 
 # ============================================================================
@@ -2658,6 +2681,68 @@ class LibraryPage(QWidget):
 # ============================================================================
 
 
+class SeekSlider(QSlider):
+    """Seek slider with reliable click-to-position and drag seeking."""
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.setTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def _set_from_mouse_x(self, x: float) -> None:
+        option = QStyleOptionSlider()
+        self.initStyleOption(option)
+        style = self.style()
+        groove = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderGroove,
+            self,
+        )
+        handle = style.subControlRect(
+            QStyle.ComplexControl.CC_Slider,
+            option,
+            QStyle.SubControl.SC_SliderHandle,
+            self,
+        )
+        left = groove.left() + handle.width() / 2.0
+        right = groove.right() - handle.width() / 2.0
+        span = max(1, int(round(right - left)))
+        position = int(round(max(0.0, min(float(span), x - left))))
+        value = QStyle.sliderValueFromPosition(
+            self.minimum(),
+            self.maximum(),
+            position,
+            span,
+            option.upsideDown,
+        )
+        self.setSliderPosition(value)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setSliderDown(True)
+            self._set_from_mouse_x(event.position().x())
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self.isSliderDown() and event.buttons() & Qt.MouseButton.LeftButton:
+            self._set_from_mouse_x(event.position().x())
+            self.sliderMoved.emit(self.sliderPosition())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
+            self._set_from_mouse_x(event.position().x())
+            self.setSliderDown(False)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class PlayerBar(QFrame):
     play_pause = pyqtSignal()
     previous = pyqtSignal()
@@ -2743,7 +2828,7 @@ class PlayerBar(QFrame):
         self.time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         progress_row.addWidget(self.time)
 
-        self.progress = QSlider(Qt.Orientation.Horizontal)
+        self.progress = SeekSlider()
         self.progress.setObjectName("ProgressSlider")
         self.progress.setRange(0, 1000)
         self.progress.sliderPressed.connect(lambda: setattr(self, "_seeking", True))
@@ -3627,6 +3712,9 @@ class MainWindow(QMainWindow):
                 font-family: "Segoe UI";
                 font-size: 13px;
             }}
+            QLabel {{
+                background: transparent;
+            }}
             QToolTip {{
                 background: #262628;
                 color: white;
@@ -3725,13 +3813,16 @@ class MainWindow(QMainWindow):
                 border-radius: 18px;
             }}
             #AlbumCard {{
-                background: transparent;
-                border: 1px solid transparent;
-                border-radius: 14px;
+                background: #151517;
+                border: 1px solid #242427;
+                border-radius: 18px;
             }}
             #AlbumCard:hover {{
-                background: #171718;
-                border-color: #252526;
+                background: #1c1c1f;
+                border-color: #41402f;
+            }}
+            #AlbumCard QLabel {{
+                background: transparent;
             }}
             #AlbumPlayButton {{
                 background: {ACCENT};
@@ -3798,9 +3889,19 @@ class MainWindow(QMainWindow):
             #FavoriteButton {{ color: #77777c; }}
             #FavoriteButton:hover {{ color: #ff7d8e; background: #231b1d; }}
             #TableHeader {{ color: #646469; font-size: 9px; text-transform: uppercase; letter-spacing: .7px; }}
-            #TrackRow {{ background: transparent; border-radius: 10px; }}
-            #TrackRow:hover {{ background: #171718; }}
-            #TrackRow[playing="true"] {{ background: #201e13; }}
+            #TrackRow {{
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: 12px;
+            }}
+            #TrackRow:hover {{
+                background: #1b1b1e;
+                border-color: #252528;
+            }}
+            #TrackRow[playing="true"] {{
+                background: #242116;
+                border-color: #4c451f;
+            }}
             #RowNum {{ color: #65656a; font-size: 11px; }}
             #RowYear {{ color: #6e6e73; font-size: 10px; }}
             #RowDuration {{ color: #8b8b90; font-size: 11px; }}
@@ -3810,24 +3911,35 @@ class MainWindow(QMainWindow):
             }}
             #TinyText {{ color: #808085; font-size: 9px; }}
             #VolumeIcon {{ color: #8a8a90; font-size: 15px; }}
+            #ProgressSlider {{
+                min-height: 24px;
+                padding: 0;
+            }}
             #ProgressSlider::groove:horizontal {{
-                background: #2f2f32;
-                height: 4px;
-                border-radius: 2px;
+                background: #343438;
+                height: 5px;
+                border-radius: 3px;
             }}
             #ProgressSlider::sub-page:horizontal {{
                 background: {ACCENT};
-                height: 4px;
-                border-radius: 2px;
+                height: 5px;
+                border-radius: 3px;
             }}
             #ProgressSlider::handle:horizontal {{
-                background: transparent;
-                width: 12px;
-                height: 12px;
-                margin: -4px 0;
-                border-radius: 6px;
+                background: {ACCENT};
+                border: 2px solid #171719;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 8px;
             }}
-            #ProgressSlider:hover::handle:horizontal {{ background: {ACCENT}; }}
+            #ProgressSlider:hover::handle:horizontal {{
+                background: {ACCENT_HOVER};
+                border-color: #222224;
+            }}
+            #ProgressSlider:disabled::handle:horizontal {{
+                background: #67676b;
+            }}
             #VolumeSlider::groove:horizontal {{ background: #2c2c2f; height: 4px; border-radius: 2px; }}
             #VolumeSlider::sub-page:horizontal {{ background: #bdbdc1; height: 4px; border-radius: 2px; }}
             #VolumeSlider::handle:horizontal {{ background: white; width: 10px; height: 10px; margin: -3px 0; border-radius: 5px; }}
