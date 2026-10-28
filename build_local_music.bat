@@ -23,22 +23,35 @@ if not exist "Local Music.spec" (
     goto FAIL
 )
 
-echo [1/4] Установка зависимостей...
-py -m pip install --upgrade pip
+set "PYTHON=%CD%\.venv\Scripts\python.exe"
+if not exist "%PYTHON%" (
+    echo [0/4] Создание виртуального окружения .venv...
+    py -m venv ".venv"
+    if errorlevel 1 goto VENV_ERROR
+)
+if not exist "%PYTHON%" goto VENV_ERROR
+
+echo Используется Python:
+"%PYTHON%" --version
+if errorlevel 1 goto VENV_ERROR
+
+echo.
+echo [1/4] Установка зависимостей в .venv...
+"%PYTHON%" -m pip install --upgrade pip
 if errorlevel 1 goto PIP_ERROR
-py -m pip install -r "requirements.txt"
+"%PYTHON%" -m pip install -r "requirements.txt"
 if errorlevel 1 goto PIP_ERROR
 
 echo.
-echo [2/4] Установка PyInstaller...
-py -m pip install --upgrade pyinstaller
+echo [2/4] Установка PyInstaller в .venv...
+"%PYTHON%" -m pip install --upgrade pyinstaller
 if errorlevel 1 goto PYINSTALLER_ERROR
 
 echo.
 echo [3/4] Сборка приложения из main.py...
 if exist "build" rmdir /s /q "build"
 if exist "dist\YandexMusicLocal" rmdir /s /q "dist\YandexMusicLocal"
-py -m PyInstaller --noconfirm --clean "Local Music.spec"
+"%PYTHON%" -m PyInstaller --noconfirm --clean "Local Music.spec"
 if errorlevel 1 goto BUILD_ERROR
 
 set "OUT=%CD%\dist\YandexMusicLocal"
@@ -73,6 +86,11 @@ echo EXE: %OUT%\YandexMusicLocal.exe
 echo.
 pause
 goto END
+
+:VENV_ERROR
+echo ОШИБКА: не удалось создать или запустить виртуальное окружение .venv.
+echo Проверь Python Launcher командой: py -0p
+goto FAIL
 
 :PIP_ERROR
 echo ОШИБКА: не удалось установить Python-зависимости.
