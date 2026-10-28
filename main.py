@@ -1483,6 +1483,7 @@ def _track_from_row(row) -> dict:
         album,
         year,
         cover_path,
+        listened_ms,
     ) = row
     return {
         "id": int(tid),
@@ -1498,6 +1499,7 @@ def _track_from_row(row) -> dict:
         "album": safe_text(album, "Без названия"),
         "year": year,
         "cover_path": cover_path or "",
+        "listened_ms": int(listened_ms or 0),
     }
 
 
@@ -1516,7 +1518,12 @@ def _base_track_sql() -> str:
             a.artist,
             a.album_name,
             a.year,
-            a.cover_path
+            a.cover_path,
+            COALESCE((
+                SELECT SUM(ls.listened_ms)
+                FROM listening_sessions ls
+                WHERE ls.track_key=t.file_path
+            ), 0) AS listened_ms
         FROM tracks t
         JOIN albums a ON a.id=t.album_id
     """
@@ -1537,8 +1544,9 @@ def fetch_all_tracks(
         "Длительность": "t.duration_ms, t.track_name COLLATE NOCASE",
         "Размер файла": "t.file_size, t.track_name COLLATE NOCASE",
         "Изменение файла": "t.mtime, t.track_name COLLATE NOCASE",
+        "Время прослушивания": "COALESCE((SELECT SUM(ls.listened_ms) FROM listening_sessions ls WHERE ls.track_key=t.file_path), 0), t.track_name COLLATE NOCASE",
     }
-    direction = "DESC" if reverse else "ASC"
+    direction = "DESC" if reverse else "ASC
     order = order_map.get(sort_mode, order_map["Название"])
     conn = db_connect()
     try:
@@ -1615,7 +1623,7 @@ def fetch_genres() -> list[str]:
     return [safe_text(row[0], "Разное") for row in rows]
 
 
-def fetch_albums(sort_mode: str = "Исполнитель", reverse: bool = False) -> list[dict]:
+def fetch_albums(sort_mode: str = "Количество треков", reverse: bool = True) -> list[dict]:
     order_map = {
         "Исполнитель": "a.artist COLLATE NOCASE, a.album_name COLLATE NOCASE",
         "Название": "a.album_name COLLATE NOCASE, a.artist COLLATE NOCASE",
@@ -1634,7 +1642,13 @@ def fetch_albums(sort_mode: str = "Исполнитель", reverse: bool = Fals
                 a.album_name,
                 a.year,
                 a.cover_path,
-                COUNT(t.id) AS track_count
+                COUNT(t.id) AS track_count,
+                (
+                    SELECT COALESCE(SUM(ls.listened_ms), 0)
+                    FROM listening_sessions ls
+                    JOIN tracks listened_track ON listened_track.file_path=ls.track_key
+                    WHERE listened_track.album_id=a.id
+                ) AS listened_ms
             FROM albums a
             LEFT JOIN tracks t ON t.album_id=a.id
             GROUP BY a.id
@@ -1651,6 +1665,7 @@ def fetch_albums(sort_mode: str = "Исполнитель", reverse: bool = Fals
             "year": row[3],
             "cover_path": row[4] or "",
             "track_count": int(row[5] or 0),
+            "listened_ms": int(row[6] or 0),
         }
         for row in rows
     ]
