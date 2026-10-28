@@ -331,6 +331,12 @@ class IncrementalScannerTests(unittest.TestCase):
             "artist": "Artist B",
             "album": "Album B",
         }
+        frequent_track = {
+            "file_path": str((self.root / "frequent-track.mp3").resolve()),
+            "track_name": "Song C",
+            "artist": "Artist A",
+            "album": "Album A",
+        }
 
         first = main.start_listening_session(repeated_track)
         main.update_listening_session(first, 600_000, finished=True)
@@ -338,22 +344,27 @@ class IncrementalScannerTests(unittest.TestCase):
         main.update_listening_session(second, 600_000, finished=True, completed=True)
         third = main.start_listening_session(other_track)
         main.update_listening_session(third, 300_000, finished=True)
+        frequent_sessions = []
+        for duration in (30_000, 60_000, 90_000):
+            session = main.start_listening_session(frequent_track)
+            main.update_listening_session(session, duration, finished=True)
+            frequent_sessions.append(session)
 
-        # Simulate the same track being played once earlier and again recently.
+        # Simulate older sessions and a recent replay of the same track.
         conn = sqlite3.connect(main.DB_PATH)
         try:
-            conn.execute(
-                "UPDATE listening_sessions SET started_at=? WHERE id=?",
-                (100.0, first),
-            )
-            conn.execute(
-                "UPDATE listening_sessions SET started_at=? WHERE id=?",
-                (300.0, second),
-            )
-            conn.execute(
-                "UPDATE listening_sessions SET started_at=? WHERE id=?",
-                (200.0, third),
-            )
+            for session_id, timestamp in (
+                (first, 100.0),
+                (second, 300.0),
+                (third, 200.0),
+                (frequent_sessions[0], 110.0),
+                (frequent_sessions[1], 150.0),
+                (frequent_sessions[2], 250.0),
+            ):
+                conn.execute(
+                    "UPDATE listening_sessions SET started_at=? WHERE id=?",
+                    (timestamp, session_id),
+                )
             conn.commit()
         finally:
             conn.close()
@@ -367,15 +378,20 @@ class IncrementalScannerTests(unittest.TestCase):
 
         artists = main.fetch_listening_view("Исполнители")
         self.assertEqual([row["title"] for row in artists], ["Artist A", "Artist B"])
-        self.assertEqual(artists[0]["listened_ms"], 1_200_000)
+        self.assertEqual(artists[0]["listened_ms"], 1_380_000)
         self.assertEqual(artists[0]["last_played"], 300.0)
 
         artist_tracks = main.fetch_artist_track_history("Artist A")
-        self.assertEqual(len(artist_tracks), 1)
-        self.assertEqual(artist_tracks[0]["title"], "Song A")
-        self.assertEqual(artist_tracks[0]["sessions"], 2)
-        self.assertEqual(artist_tracks[0]["listened_ms"], 1_200_000)
-        self.assertEqual(artist_tracks[0]["last_played"], 300.0)
+        self.assertEqual(len(artist_tracks), 2)
+        # "Song C" has more separate plays, so it ranks above the longer,
+        # but less frequently played "Song A".
+        self.assertEqual(artist_tracks[0]["title"], "Song C")
+        self.assertEqual(artist_tracks[0]["sessions"], 3)
+        self.assertEqual(artist_tracks[0]["listened_ms"], 180_000)
+        self.assertEqual(artist_tracks[1]["title"], "Song A")
+        self.assertEqual(artist_tracks[1]["sessions"], 2)
+        self.assertEqual(artist_tracks[1]["listened_ms"], 1_200_000)
+        self.assertEqual(artist_tracks[1]["last_played"], 300.0)
 
 if __name__ == "__main__":
     unittest.main()
