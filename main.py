@@ -3319,20 +3319,32 @@ class MainWindow(QMainWindow):
             )
             return False
 
+        instance = None
+        player = None
         try:
             instance = vlc.Instance("--no-video")
             if instance is None:
                 raise RuntimeError("libVLC не создал экземпляр проигрывателя")
             player = instance.media_player_new()
             if player is None:
-                instance.release()
                 raise RuntimeError("libVLC не создал медиаплеер")
 
+            player.audio_set_volume(int(self.player_bar.volume_slider.value()))
             self.vlc_instance = instance
             self.player = player
-            self.player.audio_set_volume(int(self.player_bar.volume_slider.value()))
             return True
         except Exception as exc:
+            # Release partially created native resources before allowing a retry.
+            if player is not None:
+                try:
+                    player.release()
+                except Exception:
+                    pass
+            if instance is not None:
+                try:
+                    instance.release()
+                except Exception:
+                    pass
             self.vlc_instance = None
             self.player = None
             QMessageBox.warning(
