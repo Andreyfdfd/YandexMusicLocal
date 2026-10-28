@@ -32,5 +32,8 @@ jobs:
       - name: Compile canonical entry point
         run: python -m py_compile main.py
 
+      - name: Run scanner regression tests
+        run: python -m unittest discover -s tests -v
+
       - name: Smoke-test module imports
         run: python -c "import main; print('main.py imported successfully')"
