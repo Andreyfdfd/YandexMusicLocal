@@ -268,6 +268,23 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(main.format_listening_ms(3_660_000), "1 ч 01 мин")
         self.assertEqual(main.format_listening_ms(7_200_000), "2 ч")
 
+    def test_local_wave_uses_all_tracks_and_avoids_consecutive_artists(self):
+        tracks = [
+            {"track_name": "A1", "artist": "Artist A", "listened_ms": 0, "favorite": False},
+            {"track_name": "A2", "artist": "Artist A", "listened_ms": 300_000, "favorite": True},
+            {"track_name": "B1", "artist": "Artist B", "listened_ms": 420_000, "favorite": False},
+            {"track_name": "C1", "artist": "Artist C", "listened_ms": 30_000, "favorite": False},
+        ]
+        wave = main.build_local_wave(
+            tracks,
+            {"artist a": 600_000, "artist b": 900_000, "artist c": 60_000},
+        )
+
+        self.assertEqual({track["track_name"] for track in wave}, {"A1", "A2", "B1", "C1"})
+        self.assertEqual(len(wave), len(tracks))
+        for previous, current in zip(wave, wave[1:]):
+            self.assertNotEqual(previous["artist"], current["artist"])
+
 
 if __name__ == "__main__":
     unittest.main()
