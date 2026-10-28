@@ -77,7 +77,7 @@ COVER_FILENAMES = (
 # Визуальные размеры намеренно умеренные: никаких гигантских плиток на 27-дюймовом
 # мониторе, но при этом элементы управления остаются удобными на ноутбуке.
 SIDEBAR_WIDTH = 240
-BOTTOM_PLAYER_HEIGHT = 104
+BOTTOM_PLAYER_HEIGHT = 92
 ALBUM_CARD_WIDTH = 230
 ALBUM_CARD_HEIGHT = 314
 ALBUM_COVER_SIZE = 210
@@ -865,37 +865,51 @@ def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
     conn = db_connect()
     try:
         if mode == "История":
+            # One row per track, not per listening session.
             rows = conn.execute(
-                """SELECT track_name, artist, album, listened_ms, started_at, completed, file_path
+                """SELECT MAX(track_name), MAX(artist), MAX(album), track_key,
+                          COUNT(*) AS sessions, SUM(listened_ms) AS total_ms,
+                          MAX(started_at), MAX(completed)
                    FROM listening_sessions
-                   ORDER BY started_at DESC, id DESC LIMIT ?""",
+                   GROUP BY track_key
+                   ORDER BY MAX(started_at) DESC, SUM(listened_ms) DESC LIMIT ?""",
                 (int(limit),),
             ).fetchall()
             return [
                 {"title": safe_text(r[0], "Неизвестный трек"),
                  "artist": safe_text(r[1], "Неизвестный исполнитель"),
                  "album": safe_text(r[2], "Без названия"),
-                 "listened_ms": int(r[3] or 0), "last_played": r[4],
-                 "completed": bool(r[5]), "file_path": str(r[6] or "")}
+                 "file_path": str(r[3] or ""),
+                 "sessions": int(r[4] or 0), "listened_ms": int(r[5] or 0),
+                 "last_played": r[6], "completed": bool(r[7])}
                 for r in rows
             ]
+
         if mode == "Исполнители":
+            # Recency determines artist order; lifetime totals remain visible.
             rows = conn.execute(
-                """SELECT artist, COUNT(DISTINCT track_key), SUM(listened_ms), MAX(started_at)
+                """SELECT MAX(artist), COUNT(DISTINCT track_key),
+                          SUM(listened_ms), MAX(started_at), COUNT(*)
                    FROM listening_sessions
                    GROUP BY artist COLLATE NOCASE
-                   ORDER BY SUM(listened_ms) DESC, artist COLLATE NOCASE LIMIT ?""",
+                   ORDER BY MAX(started_at) DESC, SUM(listened_ms) DESC,
+                            MAX(artist) COLLATE NOCASE LIMIT ?""",
                 (int(limit),),
             ).fetchall()
             return [
                 {"title": safe_text(r[0], "Неизвестный исполнитель"),
-                 "artist": "", "album": f"{int(r[1] or 0)} уник. треков",
-                 "listened_ms": int(r[2] or 0), "last_played": r[3]}
+                 "artist": "",
+                 "album": f"{int(r[1] or 0)} треков · {int(r[4] or 0)} сессий",
+                 "track_count": int(r[1] or 0), "sessions": int(r[4] or 0),
+                 "listened_ms": int(r[2] or 0), "last_played": r[3],
+                 "file_path": ""}
                 for r in rows
             ]
+
         if mode == "Альбомы":
             rows = conn.execute(
-                """SELECT album, artist, COUNT(DISTINCT track_key), SUM(listened_ms), MAX(started_at)
+                """SELECT album, artist, COUNT(DISTINCT track_key),
+                          SUM(listened_ms), MAX(started_at)
                    FROM listening_sessions
                    GROUP BY artist COLLATE NOCASE, album COLLATE NOCASE
                    ORDER BY SUM(listened_ms) DESC, album COLLATE NOCASE LIMIT ?""",
@@ -904,14 +918,16 @@ def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
             return [
                 {"title": safe_text(r[0], "Без названия"),
                  "artist": safe_text(r[1], "Неизвестный исполнитель"),
-                 "album": f"{int(r[2] or 0)} уник. треков",
+                 "album": f"{int(r[2] or 0)} треков",
+                 "track_count": int(r[2] or 0),
                  "listened_ms": int(r[3] or 0), "last_played": r[4]}
                 for r in rows
             ]
 
         rows = conn.execute(
-            """SELECT track_name, artist, album, track_key,
-                      COUNT(*) AS sessions, SUM(listened_ms) AS total_ms, MAX(started_at)
+            """SELECT MAX(track_name), MAX(artist), MAX(album), track_key,
+                      COUNT(*) AS sessions, SUM(listened_ms) AS total_ms,
+                      MAX(started_at)
                FROM listening_sessions
                GROUP BY track_key
                ORDER BY SUM(listened_ms) DESC, MAX(started_at) DESC LIMIT ?""",
@@ -928,6 +944,34 @@ def fetch_listening_view(mode: str, limit: int = 500) -> list[dict]:
         ]
     finally:
         conn.close()
+
+
+def fetch_artist_track_history(artist: str, limit: int = 500) -> list[dict]:
+    """Return unique tracks for an artist, ranked by cumulative listening time."""
+    conn = db_connect()
+    try:
+        rows = conn.execute(
+            """SELECT MAX(track_name), MAX(artist), MAX(album), track_key,
+                      COUNT(*) AS sessions, SUM(listened_ms) AS total_ms,
+                      MAX(started_at)
+               FROM listening_sessions
+               WHERE artist = ? COLLATE NOCASE
+               GROUP BY track_key
+               ORDER BY SUM(listened_ms) DESC, MAX(started_at) DESC,
+                        MAX(track_name) COLLATE NOCASE LIMIT ?""",
+            (str(artist), int(limit)),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {"title": safe_text(r[0], "Неизвестный трек"),
+         "artist": safe_text(r[1], "Неизвестный исполнитель"),
+         "album": safe_text(r[2], "Без названия"),
+         "file_path": str(r[3] or ""),
+         "sessions": int(r[4] or 0), "listened_ms": int(r[5] or 0),
+         "last_played": r[6]}
+        for r in rows
+    ]
 
 
 def resolve_track_path(track: dict, music_folder: Path) -> str:
@@ -2242,7 +2286,6 @@ class SortBar(QWidget):
 
 class TrackRow(QWidget):
     clicked = pyqtSignal(int)
-    favorite_toggled = pyqtSignal(int, bool)
 
     def __init__(self, index: int, track: dict, music_folder: Path, parent=None):
         super().__init__(parent)
@@ -2288,46 +2331,22 @@ class TrackRow(QWidget):
 
         self.album = ElidedLabel(safe_text(track.get("album"), "—"), DIM)
         self.album.setFont(QFont("Segoe UI", 9))
-        self.album.setFixedWidth(190)
+        self.album.setFixedWidth(250)
         root.addWidget(self.album)
-
-        self.genre = ElidedLabel(safe_text(track.get("genre"), "Разное"), DIM)
-        self.genre.setFont(QFont("Segoe UI", 9))
-        self.genre.setFixedWidth(96)
-        root.addWidget(self.genre)
-
-        self.listened = QLabel(format_listening_ms(track.get("listened_ms")))
-        self.listened.setObjectName("RowListened")
-        self.listened.setFixedWidth(92)
-        self.listened.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.listened.setToolTip("Суммарное время прослушивания этого трека")
-        root.addWidget(self.listened)
 
         self.duration = QLabel(format_ms(track.get("duration_ms")))
         self.duration.setObjectName("RowDuration")
-        self.duration.setFixedWidth(58)
+        self.duration.setFixedWidth(70)
         self.duration.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         root.addWidget(self.duration)
 
-        self.favorite = IconButton(
-            "♥" if track.get("favorite") else "♡",
-            32,
-            "Добавить в избранное",
-        )
-        self.favorite.setObjectName("FavoriteButton")
-        self.favorite.clicked.connect(self._toggle_favorite)
-        root.addWidget(self.favorite)
-
-        # Decorative labels and artwork should not compete with the row for
-        # hover/mouse ownership. The favorite button remains interactive.
+        # Compact metadata: title, artist, album and duration only.
         for child in (
             self.num,
             self.cover,
             self.title,
             self.artist,
             self.album,
-            self.genre,
-            self.listened,
             self.duration,
         ):
             child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -2342,13 +2361,6 @@ class TrackRow(QWidget):
         self.cover_requested = True
         self.cover.load(self._resolved_cover())
 
-    def _toggle_favorite(self) -> None:
-        current = bool(self.track.get("favorite"))
-        current = not current
-        self.track["favorite"] = current
-        self.favorite.setText("♥" if current else "♡")
-        self.favorite_toggled.emit(int(self.track.get("id", 0)), current)
-
     def set_playing(self, state: bool) -> None:
         state = bool(state)
         if self.playing == state:
@@ -2361,10 +2373,6 @@ class TrackRow(QWidget):
         self.style().polish(self)
         self.update()
 
-    def set_listened_ms(self, milliseconds: int) -> None:
-        self.track["listened_ms"] = max(0, int(milliseconds))
-        self.listened.setText(format_listening_ms(milliseconds))
-
     def contextMenuEvent(self, event) -> None:
         path = resolve_track_path(self.track, self.music_folder)
         menu = QMenu(self)
@@ -2373,7 +2381,6 @@ class TrackRow(QWidget):
         copy_path = menu.addAction("Копировать путь")
         open_folder = menu.addAction("Открыть папку")
         menu.addSeparator()
-        fav = menu.addAction("Убрать из избранного" if self.track.get("favorite") else "Добавить в избранное")
         chosen = menu.exec(event.globalPos())
         if chosen == play:
             self.clicked.emit(self.index)
@@ -2384,8 +2391,6 @@ class TrackRow(QWidget):
             folder = str(Path(path).parent) if path else ""
             if folder:
                 QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
-        elif chosen == fav:
-            self._toggle_favorite()
         super().contextMenuEvent(event)
 
     def mousePressEvent(self, event) -> None:
@@ -2401,7 +2406,6 @@ class TrackRow(QWidget):
 
 class TrackList(QWidget):
     track_clicked = pyqtSignal(int)
-    favorite_toggled = pyqtSignal(int, bool)
 
     def __init__(self, music_folder: Path, parent=None):
         super().__init__(parent)
@@ -2437,7 +2441,6 @@ class TrackList(QWidget):
         for index in range(self.loaded, end):
             row = TrackRow(index, self.tracks[index], self.music_folder, self)
             row.clicked.connect(self.track_clicked.emit)
-            row.favorite_toggled.connect(self.favorite_toggled.emit)
             if self.playing_path:
                 row.set_playing(self.tracks[index].get("file_path") == self.playing_path)
             self.container.insertWidget(self.container.count() - 1, row)
@@ -2449,11 +2452,6 @@ class TrackList(QWidget):
             return
         if maximum <= 0 or maximum - scroll_value < 900:
             self._append_batch()
-
-    def set_listened_ms(self, path: str, milliseconds: int) -> None:
-        for row in self.rows:
-            if row.track.get("file_path") == path:
-                row.set_listened_ms(milliseconds)
 
     def load_visible_covers(self, scroll_value: int, viewport_height: int) -> None:
         if not self.rows:
@@ -3055,14 +3053,14 @@ class LibraryPage(QWidget):
     play_all = pyqtSignal()
     shuffle_all = pyqtSignal()
     wave_requested = pyqtSignal()
-    favorite_changed = pyqtSignal(int, bool)
 
     def __init__(self, music_folder: Path, parent=None):
         super().__init__(parent)
+        self.setObjectName("LibraryPage")
         self.music_folder = music_folder
         self.results: list[dict] = []
-        self.sort_mode = "Время прослушивания"
-        self.reverse = True
+        self.sort_mode = "Название"
+        self.reverse = False
         self.genre = "Все жанры"
 
         root = QVBoxLayout(self)
@@ -3108,9 +3106,9 @@ class LibraryPage(QWidget):
         )
         self.sort.combo.blockSignals(True)
         self.sort.direction.blockSignals(True)
-        self.sort.combo.setCurrentText("Время прослушивания")
-        self.sort.direction.setChecked(True)
-        self.sort.direction.setText("↓")
+        self.sort.combo.setCurrentText("Название")
+        self.sort.direction.setChecked(False)
+        self.sort.direction.setText("↑")
         self.sort.direction.blockSignals(False)
         self.sort.combo.blockSignals(False)
         self.sort.changed.connect(self._sort_changed)
@@ -3141,11 +3139,8 @@ class LibraryPage(QWidget):
             ("", 28),
             ("", 46),
             ("Название / исполнитель", 0),
-            ("Альбом", 190),
-            ("Жанр", 96),
-            ("Слушано", 92),
-            ("Длительность", 64),
-            ("", 32),
+            ("Альбом", 250),
+            ("Длительность", 70),
         ):
             label = QLabel(text)
             label.setObjectName("TableHeader")
@@ -3161,7 +3156,6 @@ class LibraryPage(QWidget):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.track_list = TrackList(self.music_folder)
         self.track_list.track_clicked.connect(self._clicked)
-        self.track_list.favorite_toggled.connect(self.favorite_changed.emit)
         self.scroll.setWidget(self.track_list)
         self.scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
         root.addWidget(self.scroll, 1)
@@ -3208,12 +3202,16 @@ class LibraryPage(QWidget):
 
 
 class ListeningHistoryPage(QWidget):
-    """Local listening history and lifetime statistics, stored in SQLite."""
+    """Aggregated listening history: artists first, then their unique tracks."""
 
     track_activated = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.current_artist: Optional[str] = None
+        self._row_artists: list[str] = []
+        self._row_track_paths: list[str] = []
+
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 10, 28, 24)
         root.setSpacing(18)
@@ -3221,21 +3219,21 @@ class ListeningHistoryPage(QWidget):
         heading = QHBoxLayout()
         title_box = QVBoxLayout()
         title_box.setSpacing(3)
-        title = QLabel("История и статистика")
-        title.setObjectName("PageTitle")
-        title_box.addWidget(title)
-        self.subtitle = QLabel("Ваши прослушивания и музыкальные привычки")
+        self.page_title = QLabel("История прослушивания")
+        self.page_title.setObjectName("PageTitle")
+        title_box.addWidget(self.page_title)
+        self.subtitle = QLabel("Исполнители отсортированы по последнему прослушиванию")
         self.subtitle.setObjectName("MutedText")
         title_box.addWidget(self.subtitle)
         heading.addLayout(title_box)
         heading.addStretch()
 
-        self.mode = QComboBox()
-        self.mode.setObjectName("Combo")
-        self.mode.addItems(["История", "Треки", "Исполнители", "Альбомы"])
-        self.mode.setMinimumWidth(170)
-        self.mode.currentTextChanged.connect(self.refresh)
-        heading.addWidget(self.mode)
+        self.back_button = QPushButton("← Все исполнители")
+        self.back_button.setObjectName("GhostButton")
+        self.back_button.setVisible(False)
+        self.back_button.clicked.connect(self._back_to_artists)
+        heading.addWidget(self.back_button)
+
         refresh_button = QPushButton("↻  Обновить")
         refresh_button.setObjectName("GhostButton")
         refresh_button.clicked.connect(self.refresh)
@@ -3255,21 +3253,20 @@ class ListeningHistoryPage(QWidget):
         self.table = QTableWidget(0, 4)
         self.table.setObjectName("HistoryTable")
         self.table.setHorizontalHeaderLabels(
-            ["Трек / объект", "Исполнитель / альбом", "Время прослушивания", "Последнее прослушивание"]
+            ["Исполнитель", "Композиции / сессии", "Всего прослушано", "Последнее прослушивание"]
         )
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.verticalHeader().setDefaultSectionSize(48)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setAlternatingRowColors(False)
         self.table.cellDoubleClicked.connect(self._activate_row)
-        self._row_track_paths: list[str] = []
         root.addWidget(self.table, 1)
 
         self.empty = QLabel("История появится после начала прослушивания")
@@ -3294,10 +3291,20 @@ class ListeningHistoryPage(QWidget):
         return card, metric
 
     def _activate_row(self, row: int, _column: int) -> None:
+        if self.current_artist is None:
+            if 0 <= row < len(self._row_artists) and self._row_artists[row]:
+                self.current_artist = self._row_artists[row]
+                self.refresh()
+            return
+
         if 0 <= row < len(self._row_track_paths):
             path = self._row_track_paths[row]
             if path:
                 self.track_activated.emit(path)
+
+    def _back_to_artists(self) -> None:
+        self.current_artist = None
+        self.refresh()
 
     @staticmethod
     def _time_label(value) -> str:
@@ -3311,7 +3318,11 @@ class ListeningHistoryPage(QWidget):
     def refresh(self, *_args) -> None:
         try:
             summary = fetch_listening_summary()
-            rows = fetch_listening_view(self.mode.currentText())
+            rows = (
+                fetch_artist_track_history(self.current_artist)
+                if self.current_artist is not None
+                else fetch_listening_view("Исполнители")
+            )
         except Exception as exc:
             self.subtitle.setText(f"Не удалось прочитать статистику: {exc}")
             return
@@ -3319,40 +3330,63 @@ class ListeningHistoryPage(QWidget):
         self.total_time[1].setText(format_listening_ms(summary["listened_ms"]))
         self.total_sessions[1].setText(f'{summary["sessions"]:,}'.replace(",", " "))
         self.unique_tracks[1].setText(f'{summary["tracks"]:,}'.replace(",", " "))
-        mode = self.mode.currentText()
-        self.subtitle.setText({
-            "История": "Последние сессии воспроизведения",
-            "Треки": "Композиции, отсортированные по суммарному времени прослушивания",
-            "Исполнители": "Общее время по всем прослушанным композициям каждого исполнителя",
-            "Альбомы": "Общее время по всем прослушанным трекам каждого альбома",
-        }.get(mode, "История прослушивания"))
+
+        if self.current_artist is None:
+            self.page_title.setText("История прослушивания")
+            self.subtitle.setText(
+                "Исполнители по дате последнего прослушивания · двойной щелчок открывает композиции"
+            )
+            self.back_button.setVisible(False)
+            self.table.setHorizontalHeaderLabels(
+                ["Исполнитель", "Композиции / сессии", "Всего прослушано", "Последнее прослушивание"]
+            )
+        else:
+            self.page_title.setText(self.current_artist)
+            self.subtitle.setText(
+                "Композиции исполнителя, отсортированные по суммарному времени прослушивания"
+            )
+            self.back_button.setVisible(True)
+            self.table.setHorizontalHeaderLabels(
+                ["Композиция", "Альбом / сессии", "Всего прослушано", "Последнее прослушивание"]
+            )
 
         self.table.setUpdatesEnabled(False)
         self.table.setRowCount(0)
+        self._row_artists = []
         self._row_track_paths = []
         for row in rows:
             index = self.table.rowCount()
-            self._row_track_paths.append(str(row.get("file_path") or ""))
-            self.table.insertRow(index)
             title = str(row.get("title") or "—")
-            artist = str(row.get("artist") or "")
-            album = str(row.get("album") or "")
-            if mode == "История" and row.get("completed"):
-                title = "✓  " + title
-            details = "  ·  ".join(piece for piece in (artist, album) if piece and piece != "—")
+            details = str(row.get("album") or "—")
             listened = format_listening_ms(row.get("listened_ms"))
             last_played = self._time_label(row.get("last_played"))
-            values = (title, details or "—", listened, last_played)
+
+            if self.current_artist is None:
+                self._row_artists.append(title)
+                self._row_track_paths.append("")
+            else:
+                sessions = int(row.get("sessions") or 0)
+                if sessions > 1:
+                    details += f" · {sessions} сессий"
+                self._row_artists.append("")
+                self._row_track_paths.append(str(row.get("file_path") or ""))
+
+            self.table.insertRow(index)
+            values = (title, details, listened, last_played)
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if column == 2:
                     item.setTextAlignment(
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )
+                    item.setToolTip(f"Всего прослушано: {listened}")
                 self.table.setItem(index, column, item)
+
         self.table.setUpdatesEnabled(True)
         self.empty.setVisible(not rows)
         self.table.setVisible(bool(rows))
+
+
 
 
 class SeekSlider(QSlider):
@@ -3471,7 +3505,8 @@ class PlayerBar(QFrame):
         controls.setSpacing(7)
         controls.addStretch()
 
-        self.shuffle_btn = IconButton("🔀", 36, "Случайный порядок", True)
+        self.shuffle_btn = IconButton("⤨", 36, "Случайный порядок", True)
+        self.shuffle_btn.setObjectName("ShuffleButton")
         self.shuffle_btn.toggled.connect(self.shuffle.emit)
         controls.addWidget(self.shuffle_btn)
 
@@ -3567,7 +3602,7 @@ class PlayerBar(QFrame):
         self.shuffle_btn.blockSignals(True)
         self.shuffle_btn.setChecked(enabled)
         self.shuffle_btn.blockSignals(False)
-        self.shuffle_btn.setText("🔀")
+        self.shuffle_btn.setText("⤨")
 
     def set_repeat(self, mode: int) -> None:
         texts = {0: "↻", 1: "↻", 2: "↻¹"}
@@ -3605,6 +3640,54 @@ class PlayerBar(QFrame):
 # ============================================================================
 # ГЛАВНОЕ ОКНО
 # ============================================================================
+
+
+class WaveBackground(QWidget):
+    """Paint a restrained golden wave behind the transparent page surfaces."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAutoFillBackground(False)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        width = max(1, self.width())
+        height = max(1, self.height())
+
+        base = QLinearGradient(0, 0, width, height)
+        base.setColorAt(0.0, QColor("#1b1b20"))
+        base.setColorAt(0.48, QColor("#17171c"))
+        base.setColorAt(1.0, QColor("#19191d"))
+        painter.fillRect(self.rect(), base)
+
+        wave = QPainterPath()
+        wave.moveTo(0, height * 0.72)
+        wave.cubicTo(
+            width * 0.18, height * 0.55,
+            width * 0.36, height * 0.76,
+            width * 0.54, height * 0.59,
+        )
+        wave.cubicTo(
+            width * 0.73, height * 0.39,
+            width * 0.83, height * 0.54,
+            width, height * 0.43,
+        )
+        wave.lineTo(width, height)
+        wave.lineTo(0, height)
+        wave.closeSubpath()
+
+        painter.save()
+        painter.setClipPath(wave)
+        gold = QLinearGradient(0, height * 0.40, 0, height)
+        gold.setColorAt(0.0, QColor(255, 220, 0, 0))
+        gold.setColorAt(0.30, QColor(214, 181, 0, 24))
+        gold.setColorAt(0.68, QColor(181, 151, 0, 42))
+        gold.setColorAt(1.0, QColor(154, 127, 0, 48))
+        painter.fillRect(self.rect(), gold)
+        painter.restore()
+        painter.end()
 
 
 class MainWindow(QMainWindow):
@@ -3689,7 +3772,7 @@ class MainWindow(QMainWindow):
         self.sidebar.folder_clicked.connect(self.choose_music_folder)
         root.addWidget(self.sidebar)
 
-        content = QWidget()
+        content = WaveBackground()
         content.setObjectName("Content")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -3719,7 +3802,6 @@ class MainWindow(QMainWindow):
         self.library.play_all.connect(self.play_library_all)
         self.library.shuffle_all.connect(self.shuffle_library)
         self.library.wave_requested.connect(self.play_my_wave)
-        self.library.favorite_changed.connect(self.on_favorite_changed)
 
         self.history_page = ListeningHistoryPage()
         self.history_page.track_activated.connect(self.play_history_path)
@@ -3738,7 +3820,13 @@ class MainWindow(QMainWindow):
         self.player_bar.volume.connect(self.change_volume)
         self.player_bar.seek.connect(self.seek_to)
         self.player_bar.queue_clicked.connect(self.on_queue_clicked)
-        content_layout.addWidget(self.player_bar)
+        player_bar_container = QWidget()
+        player_bar_container.setObjectName("PlayerBarContainer")
+        player_bar_layout = QHBoxLayout(player_bar_container)
+        player_bar_layout.setContentsMargins(12, 6, 12, 8)
+        player_bar_layout.setSpacing(0)
+        player_bar_layout.addWidget(self.player_bar)
+        content_layout.addWidget(player_bar_container)
 
         self.statusBar().setObjectName("StatusBar")
         self.statusBar().showMessage("Готово")
@@ -4039,7 +4127,7 @@ class MainWindow(QMainWindow):
         if not path or not Path(path).is_file():
             self.statusBar().showMessage("Файл из истории больше не найден на диске", 5000)
             return
-        tracks = fetch_all_tracks(self.music_folder, "Время прослушивания", True)
+        tracks = fetch_all_tracks(self.music_folder, "Название", False)
         key = os.path.normcase(os.path.abspath(path))
         for index, track in enumerate(tracks):
             if os.path.normcase(os.path.abspath(track.get("file_path", ""))) == key:
@@ -4109,7 +4197,7 @@ class MainWindow(QMainWindow):
         self._start_current()
 
     def play_all(self) -> None:
-        tracks = fetch_all_tracks(self.music_folder, "Время прослушивания", True)
+        tracks = fetch_all_tracks(self.music_folder, "Название", False)
         self._set_queue(tracks, 0, False)
 
     def shuffle_all(self) -> None:
@@ -4422,8 +4510,6 @@ class MainWindow(QMainWindow):
         for queued in self.queue:
             if queued.get("file_path") == track_path:
                 queued["listened_ms"] = track_total_ms
-        self.library.track_list.set_listened_ms(track_path, track_total_ms)
-        self.album_page.track_list.set_listened_ms(track_path, track_total_ms)
         if self.stack.currentWidget() is self.history_page:
             self.history_page.refresh()
 
@@ -4432,8 +4518,8 @@ class MainWindow(QMainWindow):
         try:
             tracks = fetch_all_tracks(
                 self.music_folder,
-                "Время прослушивания",
-                True,
+                "Название",
+                False,
             )
         except Exception as exc:
             self.statusBar().showMessage(f"Не удалось выбрать трек: {exc}", 5000)
@@ -4507,8 +4593,6 @@ class MainWindow(QMainWindow):
                     )
                     self._listening_last_flush_ms = self._listening_session_ms
                     total_listened = self._listening_base_ms + self._listening_session_ms
-                    self.library.track_list.set_listened_ms(self.current_path, total_listened)
-                    self.album_page.track_list.set_listened_ms(self.current_path, total_listened)
                     if self.stack.currentWidget() is self.history_page:
                         self.history_page.refresh()
             else:
@@ -4620,8 +4704,14 @@ class MainWindow(QMainWindow):
     def _apply_stylesheet(self) -> None:
         self.setStyleSheet(
             f"""
-            QMainWindow, QWidget {{
+            QMainWindow {{
                 background: {BG};
+                color: {TEXT};
+                font-family: "Segoe UI";
+                font-size: 13px;
+            }}
+            QWidget {{
+                background-color: transparent;
                 color: {TEXT};
                 font-family: "Segoe UI";
                 font-size: 13px;
@@ -4690,10 +4780,8 @@ class MainWindow(QMainWindow):
                 color: {ACCENT};
                 font-weight: 650;
             }}
-            #Content {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #17171b, stop:0.55 #131317, stop:1 #18181d);
-            }}
+            #Content {{ background: transparent; }}
+            #PlayerBarContainer, #LibraryPage {{ background: transparent; }}
             #SearchIcon {{ color: #77777c; font-size: 22px; }}
             #SearchField {{
                 background: #1c1c21;
@@ -4833,8 +4921,6 @@ class MainWindow(QMainWindow):
             }}
             #PlayButton:hover {{ background: {ACCENT_HOVER}; }}
             #PlayButton:pressed {{ background: {ACCENT_PRESSED}; }}
-            #FavoriteButton {{ color: #77777c; }}
-            #FavoriteButton:hover {{ color: #ff7d8e; background: #231b1d; }}
             #TableHeader {{ color: #646469; font-size: 9px; text-transform: uppercase; letter-spacing: .7px; }}
             #TrackRow {{
                 background: transparent;
@@ -4856,9 +4942,28 @@ class MainWindow(QMainWindow):
             #RowDuration {{ color: #b0b0b6; font-size: 11px; }}
             #PlayerBar {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #1d1d22, stop:0.18 #17171b, stop:1 #111114);
-                border-top: 1px solid #37373e;
+                    stop:0 #28261c, stop:0.20 #1d1d20, stop:0.72 #19191d, stop:1 #211e14);
+                border: 1px solid #554a26;
+                border-radius: 18px;
             }}
+            #ShuffleButton {{
+                background: transparent;
+                color: #c1bfae;
+                border: 1px solid transparent;
+                border-radius: 18px;
+                font-weight: 700;
+            }}
+            #ShuffleButton:hover {{
+                background: #2c2819;
+                border-color: #514522;
+                color: {ACCENT_HOVER};
+            }}
+            #ShuffleButton:checked {{
+                background: {ACCENT};
+                color: #17150b;
+                border: 1px solid #fff078;
+            }}
+            #ShuffleButton:checked:hover {{ background: {ACCENT_HOVER}; }}
             #TinyText {{ color: #808085; font-size: 9px; }}
             #VolumeIcon {{ color: #8a8a90; font-size: 15px; }}
             #ProgressSlider {{
@@ -4866,22 +4971,24 @@ class MainWindow(QMainWindow):
                 padding: 0;
             }}
             #ProgressSlider::groove:horizontal {{
-                background: #343438;
-                height: 5px;
-                border-radius: 3px;
+                background: #39383a;
+                border: 1px solid #514b35;
+                height: 6px;
+                border-radius: 4px;
             }}
             #ProgressSlider::sub-page:horizontal {{
-                background: {ACCENT};
-                height: 5px;
-                border-radius: 3px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #e4c900, stop:1 {ACCENT_HOVER});
+                height: 6px;
+                border-radius: 4px;
             }}
             #ProgressSlider::handle:horizontal {{
                 background: {ACCENT};
-                border: 2px solid #171719;
-                width: 14px;
-                height: 14px;
-                margin: -5px 0;
-                border-radius: 8px;
+                border: 2px solid #141416;
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+                border-radius: 9px;
             }}
             #ProgressSlider:hover::handle:horizontal {{
                 background: {ACCENT_HOVER};
