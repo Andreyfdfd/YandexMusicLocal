@@ -212,23 +212,27 @@ def create_desktop_shortcut_async() -> None:
             desktop.mkdir(parents=True, exist_ok=True)
             shortcut = desktop / "Local Music.lnk"
             icon = _create_runtime_icon()
-            executable = Path(sys.executable).resolve()
-
             if getattr(sys, "frozen", False):
-                target = str(executable)
-                arguments = ""
-                working_dir = str(executable.parent)
-                icon_location = str(icon) if icon else target
+                executable = Path(sys.executable).resolve()
             else:
-                python_exe = executable
-                if python_exe.name.lower() == "python.exe":
-                    pythonw = python_exe.with_name("pythonw.exe")
-                    if pythonw.exists():
-                        python_exe = pythonw
-                target = str(python_exe)
-                arguments = f'"{Path(__file__).resolve()}"'
-                working_dir = str(Path(__file__).resolve().parent)
-                icon_location = str(icon) if icon else str(python_exe)
+                # A source run is for development only. Never create a desktop
+                # shortcut that launches python.exe/pythonw.exe; use a packaged
+                # executable if one exists, otherwise leave shortcut creation to
+                # build_local_music.bat.
+                project_dir = Path(__file__).resolve().parent
+                candidates = (
+                    project_dir / "YandexMusicLocal.exe",
+                    project_dir / "dist" / "YandexMusicLocal" / "YandexMusicLocal.exe",
+                    project_dir / "release" / "YandexMusicLocal.exe",
+                )
+                executable = next((item.resolve() for item in candidates if item.is_file()), None)
+                if executable is None:
+                    return
+
+            target = str(executable)
+            arguments = ""
+            working_dir = str(executable.parent)
+            icon_location = str(icon) if icon else target
 
             ps = f"""
 $ws = New-Object -ComObject WScript.Shell
