@@ -2192,6 +2192,10 @@ class HomePage(QWidget):
         self._query_task = None
         self._sort_mode = "Исполнитель"
         self._reverse = False
+        self._cover_update_timer = QTimer(self)
+        self._cover_update_timer.setSingleShot(True)
+        self._cover_update_timer.setInterval(24)
+        self._cover_update_timer.timeout.connect(self._update_visible_covers)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 8, 28, 22)
@@ -2245,7 +2249,9 @@ class HomePage(QWidget):
         self.scroll.setWidget(self.grid_widget)
         root.addWidget(self.scroll, 1)
 
-        self.scroll.verticalScrollBar().valueChanged.connect(lambda _v: self._update_visible_covers())
+        self.scroll.verticalScrollBar().valueChanged.connect(
+            lambda _v: self._cover_update_timer.start()
+        )
         self._relayout_timer = QTimer(self)
         self._relayout_timer.setSingleShot(True)
         self._relayout_timer.setInterval(160)
@@ -2336,11 +2342,16 @@ class HomePage(QWidget):
         # Include a few rows ahead so scrolling does not reveal blank cards.
         needed_end = min(len(self._albums), (last_row + 1) * self._columns)
 
-        while self._created < needed_end:
+        if self._created < needed_end:
+            # Add one batch per event-loop turn. Dragging the scrollbar far down
+            # should not synchronously instantiate thousands of widgets at once.
             before = self._created
             self._append_album_batch()
+            if self._created < needed_end and self._created > before:
+                self._cover_update_timer.start(0)
+                return
             if self._created == before:
-                break
+                return
 
         first_index = first_row * self._columns
         last_index = min(self._created, needed_end)
