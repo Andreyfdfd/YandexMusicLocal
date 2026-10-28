@@ -1798,6 +1798,7 @@ class IconButton(QToolButton):
 class Sidebar(QFrame):
     home_clicked = pyqtSignal()
     collection_clicked = pyqtSignal()
+    history_clicked = pyqtSignal()
     search_clicked = pyqtSignal()
     folder_clicked = pyqtSignal()
 
@@ -1829,13 +1830,16 @@ class Sidebar(QFrame):
         root.addSpacing(24)
 
         home = self._make_button("⌂", "Главная")
-        collection = self._make_button("♫", "Моя коллекция")
+        collection = self._make_button("▦", "Альбомы")
+        history = self._make_button("◷", "История")
         search = self._make_button("⌕", "Поиск")
         self.btn_home = home
         self.btn_collection = collection
+        self.btn_history = history
         self.btn_search = search
         root.addWidget(home)
         root.addWidget(collection)
+        root.addWidget(history)
         root.addWidget(search)
 
         root.addSpacing(18)
@@ -1863,6 +1867,7 @@ class Sidebar(QFrame):
 
         self.btn_home.clicked.connect(self.home_clicked.emit)
         self.btn_collection.clicked.connect(self.collection_clicked.emit)
+        self.btn_history.clicked.connect(self.history_clicked.emit)
         self.btn_search.clicked.connect(self.search_clicked.emit)
         self.btn_folder.clicked.connect(self.folder_clicked.emit)
 
@@ -1879,7 +1884,7 @@ class Sidebar(QFrame):
         return button
 
     def set_active(self, button: Optional[QToolButton]) -> None:
-        for candidate in (self.btn_home, self.btn_collection, self.btn_search):
+        for candidate in (self.btn_home, self.btn_collection, self.btn_history, self.btn_search):
             candidate.blockSignals(True)
             candidate.setChecked(candidate is button)
             candidate.blockSignals(False)
@@ -2256,6 +2261,9 @@ class AlbumCard(QFrame):
         if year:
             suffix.append(str(year))
         suffix.append(f"{count} тр." if count else "нет треков")
+        listened_ms = int(album.get("listened_ms") or 0)
+        if listened_ms > 0:
+            suffix.append(f"слушали {format_listening_ms(listened_ms)}")
         self.subtitle = ElidedLabel(f"{artist}  •  " + "  •  ".join(suffix), MUTED)
         self.subtitle.setFont(QFont("Segoe UI", 9))
         self.subtitle.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -2423,8 +2431,8 @@ class HomePage(QWidget):
         self._query_generation = 0
         self._query_in_progress = False
         self._query_task = None
-        self._sort_mode = "Исполнитель"
-        self._reverse = False
+        self._sort_mode = "Количество треков"
+        self._reverse = True
         self._cover_update_timer = QTimer(self)
         self._cover_update_timer.setSingleShot(True)
         self._cover_update_timer.setInterval(24)
@@ -2447,6 +2455,13 @@ class HomePage(QWidget):
         heading.addStretch()
 
         self.sort = SortBar(["Исполнитель", "Название", "Год", "Количество треков"])
+        self.sort.combo.blockSignals(True)
+        self.sort.direction.blockSignals(True)
+        self.sort.combo.setCurrentText("Количество треков")
+        self.sort.direction.setChecked(True)
+        self.sort.direction.setText("↓")
+        self.sort.direction.blockSignals(False)
+        self.sort.combo.blockSignals(False)
         self.sort.changed.connect(self.sort_changed.emit)
         heading.addWidget(self.sort)
 
