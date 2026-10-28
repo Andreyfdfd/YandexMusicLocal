@@ -40,6 +40,60 @@ jobs:
       - name: Smoke-test module imports
         run: python -c "import main; print('main.py imported successfully')"
 
+      - name: Validate safe updater script and remote URLs
+        shell: pwsh
+        run: |
+          $scriptPath = Join-Path $PWD 'scripts/update-local.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error $_.Message }
+              throw 'PowerShell syntax validation failed for scripts/update-local.ps1'
+          }
+
+          $pattern = '^(?:(?:https?|git\+https?)://github\.com/|ssh://git@github\.com/|git@github\.com:)(?<repoPath>[^?#]+)
+        run: python -m pip install --upgrade pyinstaller
+
+      - name: Build Windows GUI executable
+        run: python -m PyInstaller --noconfirm --clean --distpath dist-staging --workpath build-staging "Local Music.spec"
+
+      - name: Verify packaged executable
+        shell: pwsh
+        run: |
+          $exe = 'dist-staging\YandexMusicLocal\YandexMusicLocal.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw "PyInstaller did not produce the expected GUI executable: $exe"
+          }
+          Write-Host "Executable package created: $exe" -ForegroundColor Green
+
+          $examples = @(
+              'https://github.com/Andreyfdfd/YandexMusicLocal.git',
+              'https://github.com/Andreyfdfd/YandexMusicLocal',
+              'git@github.com:Andreyfdfd/YandexMusicLocal.git',
+              'ssh://git@github.com/Andreyfdfd/YandexMusicLocal.git'
+          )
+          foreach ($origin in $examples) {
+              if ($origin -notmatch $pattern) { throw "Origin regex rejected valid URL: $origin" }
+              $repoPath = ([string]$Matches['repoPath'] -replace '(?i)\.git
+        run: python -m pip install --upgrade pyinstaller
+
+      - name: Build Windows GUI executable
+        run: python -m PyInstaller --noconfirm --clean --distpath dist-staging --workpath build-staging "Local Music.spec"
+
+      - name: Verify packaged executable
+        shell: pwsh
+        run: |
+          $exe = 'dist-staging\YandexMusicLocal\YandexMusicLocal.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw "PyInstaller did not produce the expected GUI executable: $exe"
+          }
+          Write-Host "Executable package created: $exe" -ForegroundColor Green
+, '').TrimEnd('/')
+              if ($repoPath -ine 'Andreyfdfd/YandexMusicLocal') { throw "Wrong parsed repo path: $repoPath" }
+          }
+          Write-Host 'Updater syntax and supported GitHub remote formats validated.' -ForegroundColor Green
+
       - name: Install PyInstaller
         run: python -m pip install --upgrade pyinstaller
 
