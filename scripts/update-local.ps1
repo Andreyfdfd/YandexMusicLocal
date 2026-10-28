@@ -25,21 +25,23 @@ function Invoke-Git {
     }
 }
 
-# Validate common GitHub HTTPS and SSH remotes. Trim potential whitespace and
-# quotes before parsing; accept the repository URL both with and without .git.
+# Accept HTTPS and SSH remotes, with or without the optional .git suffix.
 $originOutput = @(& git -C $ProjectRoot remote get-url origin 2>$null)
 $originExitCode = $LASTEXITCODE
 $origin = if ($originOutput.Count -gt 0) { [string]$originOutput[0] } else { '' }
 $origin = $origin.Trim().Trim([char]'"').Trim([char]"'").TrimEnd('/')
-$originIsValid = $false
 
-$originPattern = '^(?:(?:https?|git\+https?)://github\.com/|ssh://git@github\.com/|git@github\.com:)(?<repoPath>[^?#]+)$'
-if ($origin -match $originPattern) {
-    $repoPath = [string]$Matches['repoPath']
-    $repoPath = ($repoPath -replace '(?i)\.git$', '').TrimEnd('/')
-    $originIsValid = $repoPath -ieq 'Andreyfdfd/YandexMusicLocal'
+$repoPath = ''
+if ($origin -match '^https?://github\.com/') {
+    $repoPath = $origin -replace '^https?://github\.com/', ''
+} elseif ($origin -match '^ssh://git@github\.com/') {
+    $repoPath = $origin -replace '^ssh://git@github\.com/', ''
+} elseif ($origin -match '^git@github\.com:') {
+    $repoPath = $origin -replace '^git@github\.com:', ''
 }
 
+$repoPath = ($repoPath -replace '\.git$', '').TrimEnd('/')
+$originIsValid = $repoPath -ieq 'Andreyfdfd/YandexMusicLocal'
 if ($originExitCode -ne 0 -or -not $originIsValid) {
     throw "Папка не подключена к ожидаемому GitHub-репозиторию (origin='$origin'). Ничего не изменено."
 }
