@@ -4883,14 +4883,14 @@ class MainWindow(QMainWindow):
             }}
             #LogoMark {{
                 color: {ACCENT};
-                font-size: 30px;
-                font-weight: 750;
+                font-size: 32px;
+                font-weight: 800;
             }}
             #LogoText {{
                 color: white;
-                font-weight: 700;
-                letter-spacing: 2.4px;
-                font-size: 14px;
+                font-weight: 750;
+                letter-spacing: 2.5px;
+                font-size: 15px;
             }}
             #SidebarSub {{ color: {DIM}; font-size: 11px; }}
             #SidebarCaption {{
@@ -4906,18 +4906,18 @@ class MainWindow(QMainWindow):
                 padding: 7px 10px 0 42px;
             }}
             #SidebarStatus {{
-                color: #77a947;
-                font-size: 10px;
+                color: #83bb50;
+                font-size: 11px;
                 padding: 0 10px;
             }}
             #SideButton {{
                 background: transparent;
                 border: 1px solid transparent;
-                border-radius: 14px;
-                color: #a7a7af;
+                border-radius: 17px;
+                color: #b4b4bc;
                 text-align: left;
-                padding: 0 16px;
-                font-size: 13px;
+                padding: 0 18px;
+                font-size: 14px;
             }}
             #SideButton:hover {{
                 background: #171719;
@@ -4933,25 +4933,25 @@ class MainWindow(QMainWindow):
             }}
             #Content {{ background: transparent; }}
             #PlayerBarContainer, #LibraryPage {{ background: transparent; }}
-            #SearchIcon {{ color: #9999a1; font-size: 26px; }}
+            #SearchIcon {{ color: #b1b1b9; font-size: 28px; }}
             #SearchField {{
                 background: #1c1c21;
                 border: 1px solid transparent;
-                border-radius: 25px;
+                border-radius: 27px;
                 color: white;
-                padding: 0 20px;
+                padding: 0 22px;
                 selection-background-color: #3a3a3d;
-                font-size: 14px;
+                font-size: 15px;
             }}
             #SearchField:hover {{ background: #1b1b1c; }}
             #SearchField:focus {{
                 background: #1c1c1f;
                 border-color: #4a4429;
             }}
-            #HeaderStatus {{ color: #85858d; font-size: 11px; min-width: 76px; }}
-            #PageTitle {{ font-size: 30px; font-weight: 800; color: white; }}
-            #PageTitleLarge {{ font-size: 32px; font-weight: 800; color: white; }}
-            #SectionTitle {{ font-size: 20px; font-weight: 750; color: white; }}
+            #HeaderStatus {{ color: #a0a0a9; font-size: 12px; min-width: 82px; }}
+            #PageTitle {{ font-size: 32px; font-weight: 850; color: white; }}
+            #PageTitleLarge {{ font-size: 34px; font-weight: 850; color: white; }}
+            #SectionTitle {{ font-size: 22px; font-weight: 800; color: white; }}
             #MutedText {{ color: #c2c2c9; font-size: 12px; }}
             #DimText {{ color: #a1a1a9; font-size: 12px; }}
             #AccentCaption {{
@@ -4960,27 +4960,27 @@ class MainWindow(QMainWindow):
                 font-weight: 800;
                 letter-spacing: 1.4px;
             }}
-            #HeroTitle {{ font-size: 26px; font-weight: 800; color: white; }}
-            #HeroArtist {{ font-size: 14px; font-weight: 650; color: #ececef; }}
+            #HeroTitle {{ font-size: 28px; font-weight: 850; color: white; }}
+            #HeroArtist {{ font-size: 15px; font-weight: 700; color: #f0f0f3; }}
             #HeroMeta {{ color: #b1b1b5; font-size: 11px; }}
             #HeroMetaSecondary {{ color: #77777c; font-size: 10px; }}
             #NowPlayingHero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #302b1d, stop:0.38 #222124, stop:1 #19191d);
-                border: 1px solid #494126;
-                border-radius: 24px;
+                border: 1px solid #61552b;
+                border-radius: 26px;
             }}
             #AlbumHero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #2c291e, stop:0.48 #202024, stop:1 #18181c);
-                border: 1px solid #443d27;
-                border-radius: 24px;
+                border: 1px solid #51462a;
+                border-radius: 26px;
             }}
             #AlbumCard {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #222227, stop:1 #19191e);
-                border: 1px solid #393941;
-                border-radius: 22px;
+                border: 1px solid #51472b;
+                border-radius: 24px;
             }}
             #AlbumCard:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -5003,10 +5003,10 @@ class MainWindow(QMainWindow):
                 background: {ACCENT};
                 color: #181818;
                 border: none;
-                border-radius: 16px;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: 750;
+                border-radius: 19px;
+                padding: 14px 23px;
+                font-size: 15px;
+                font-weight: 800;
             }}
             #AccentButton:hover {{ background: {ACCENT_HOVER}; }}
             #AccentButton:pressed {{ background: {ACCENT_PRESSED}; }}
@@ -5015,10 +5015,10 @@ class MainWindow(QMainWindow):
                     stop:0 #ffeb53, stop:0.55 #ffd928, stop:1 #ffb94b);
                 color: #19160a;
                 border: 1px solid #fff07b;
-                border-radius: 16px;
-                padding: 12px 19px;
-                font-size: 14px;
-                font-weight: 800;
+                border-radius: 19px;
+                padding: 14px 22px;
+                font-size: 15px;
+                font-weight: 850;
             }}
             #WaveButton:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -5029,10 +5029,10 @@ class MainWindow(QMainWindow):
             #GhostButton {{
                 background: #252528;
                 color: #f4f4f5;
-                border: 1px solid #303034;
-                border-radius: 15px;
-                padding: 11px 17px;
-                font-size: 13px;
+                border: 1px solid #393940;
+                border-radius: 18px;
+                padding: 13px 20px;
+                font-size: 14px;
             }}
             #GhostButton:hover {{
                 background: #34332b;
@@ -5043,10 +5043,10 @@ class MainWindow(QMainWindow):
                 background: #181819;
                 color: #e9e9eb;
                 border: 1px solid #28282a;
-                border-radius: 13px;
-                padding: 8px 12px;
-                min-height: 34px;
-                font-size: 13px;
+                border-radius: 16px;
+                padding: 10px 14px;
+                min-height: 38px;
+                font-size: 14px;
             }}
             #Combo:hover, #QueueCombo:hover {{ border-color: #38383b; }}
             #Combo QAbstractItemView, #QueueCombo QAbstractItemView {{
@@ -5058,9 +5058,9 @@ class MainWindow(QMainWindow):
             }}
             #IconButton {{
                 background: transparent;
-                color: #b3b3bb;
+                color: #c0c0c8;
                 border: 1px solid transparent;
-                border-radius: 22px;
+                border-radius: 24px;
             }}
             #IconButton:hover {{ background: #29292f; border-color: #3a3a42; color: white; }}
             #IconButton:checked {{ background: #332e1b; border-color: #665a2a; color: {ACCENT_HOVER}; }}
@@ -5069,9 +5069,9 @@ class MainWindow(QMainWindow):
             #PlayButton {{
                 background: {ACCENT};
                 color: #131313;
-                border: 1px solid #f2d300;
-                border-radius: 28px;
-                font-size: 20px;
+                border: 1px solid #fff078;
+                border-radius: 31px;
+                font-size: 22px;
                 font-weight: 800;
             }}
             #PlayButton:hover {{ background: {ACCENT_HOVER}; }}
@@ -5120,8 +5120,8 @@ class MainWindow(QMainWindow):
                 border: 1px solid #fff078;
             }}
             #ShuffleButton:checked:hover {{ background: {ACCENT_HOVER}; }}
-            #TinyText {{ color: #aaaab2; font-size: 10px; font-weight: 600; }}
-            #VolumeIcon {{ color: #b1b1b8; font-size: 19px; }}
+            #TinyText {{ color: #b9b9c1; font-size: 11px; font-weight: 650; }}
+            #VolumeIcon {{ color: #d0d0d6; font-size: 21px; }}
             #ProgressSlider {{
                 min-height: 28px;
                 padding: 0 2px;
@@ -5153,12 +5153,12 @@ class MainWindow(QMainWindow):
             #ProgressSlider:disabled::handle:horizontal {{
                 background: #67676b;
             }}
-            #VolumeSlider::groove:horizontal {{ background: #3d3d42; height: 6px; border-radius: 4px; }}
-            #VolumeSlider::sub-page:horizontal {{ background: {ACCENT}; height: 6px; border-radius: 4px; }}
-            #VolumeSlider::handle:horizontal {{ background: white; border: 2px solid #24211a; width: 14px; height: 14px; margin: -4px 0; border-radius: 7px; }}
+            #VolumeSlider::groove:horizontal {{ background: #47474d; height: 7px; border-radius: 5px; }}
+            #VolumeSlider::sub-page:horizontal {{ background: {ACCENT}; height: 7px; border-radius: 5px; }}
+            #VolumeSlider::handle:horizontal {{ background: white; border: 2px solid #24211a; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }}
             #ScrollArea {{ border: none; background: transparent; }}
-            QScrollBar:vertical {{ background: transparent; width: 9px; margin: 3px; }}
-            QScrollBar::handle:vertical {{ background: #3c3c42; border-radius: 5px; min-height: 50px; }}
+            QScrollBar:vertical {{ background: transparent; width: 11px; margin: 4px; }}
+            QScrollBar::handle:vertical {{ background: #45454d; border-radius: 6px; min-height: 54px; }}
             QScrollBar::handle:vertical:hover {{ background: #47474b; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
             #HistoryMetricCard {{
@@ -5175,8 +5175,8 @@ class MainWindow(QMainWindow):
             }}
             #HistoryMetricValue {{
                 color: {ACCENT_HOVER};
-                font-size: 28px;
-                font-weight: 800;
+                font-size: 30px;
+                font-weight: 850;
             }}
             #EmptyState {{
                 color: #a0a0a7;
@@ -5224,20 +5224,20 @@ class MainWindow(QMainWindow):
                 border: 1px solid #403e34;
                 border-radius: 7px;
                 text-align: center;
-                height: 12px;
+                height: 14px;
                 color: #151515;
-                font-size: 10px;
+                font-size: 11px;
             }}
-            QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
+            QProgressBar::chunk {{ background: {ACCENT}; border-radius: 7px; }}
             QMenu {{
                 background: #202024;
                 color: white;
                 border: 1px solid #45454d;
-                border-radius: 12px;
-                padding: 7px;
-                font-size: 13px;
+                border-radius: 15px;
+                padding: 8px;
+                font-size: 14px;
             }}
-            QMenu::item {{ padding: 10px 24px; border-radius: 8px; }}
+            QMenu::item {{ padding: 12px 26px; border-radius: 10px; }}
             QMenu::item:selected {{ background: #2c2c2f; color: {ACCENT}; }}
             """
         )
