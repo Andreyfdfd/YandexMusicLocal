@@ -286,5 +286,34 @@ class IncrementalScannerTests(unittest.TestCase):
             self.assertNotEqual(previous["artist"], current["artist"])
 
 
+    def test_listening_session_writer_serializes_database_writes(self):
+        track_path = self.make_track(self.music, "writer-test.mp3")
+        main.ensure_database_schema()
+        track = {
+            "file_path": str(track_path.resolve()),
+            "track_name": "writer-test",
+            "artist": "Test Artist",
+            "album": "Test Album",
+        }
+
+        writer = main.ListeningSessionWriter()
+        try:
+            writer.start_session(101, track)
+            writer.update_session(101, 4_500)
+            writer.finish_session(101, 7_250, completed=True)
+            self.assertTrue(writer.wait_for_idle(timeout=3.0))
+
+            summary = main.fetch_listening_summary()
+            self.assertEqual(summary["sessions"], 1)
+            self.assertEqual(summary["listened_ms"], 7_250)
+
+            history = main.fetch_listening_view("История")
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0]["listened_ms"], 7_250)
+            self.assertTrue(history[0]["completed"])
+        finally:
+            writer.shutdown()
+            writer._thread.join(timeout=1.0)
+
 if __name__ == "__main__":
     unittest.main()
