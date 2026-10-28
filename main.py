@@ -1650,8 +1650,7 @@ def fetch_albums(sort_mode: str = "Количество треков", reverse: 
                 (
                     SELECT COALESCE(SUM(ls.listened_ms), 0)
                     FROM listening_sessions ls
-                    JOIN tracks listened_track ON listened_track.file_path=ls.track_key
-                    WHERE listened_track.album_id=a.id
+                    WHERE ls.artist=a.artist AND ls.album=a.album_name
                 ) AS listened_ms
             FROM albums a
             LEFT JOIN tracks t ON t.album_id=a.id
@@ -2514,7 +2513,7 @@ class HomePage(QWidget):
         self._relayout_timer.setInterval(160)
         self._relayout_timer.timeout.connect(self._relayout)
 
-    def load_albums(self, mode="Исполнитель", reverse=False) -> None:
+    def load_albums(self, mode="Количество треков", reverse=True) -> None:
         self._loaded_once = True
         self._sort_mode = mode
         self._reverse = bool(reverse)
@@ -3487,6 +3486,23 @@ class MainWindow(QMainWindow):
             if initial:
                 self.statusBar().showMessage("Папка с музыкой не выбрана")
             return
+        self._finish_listening_session(completed=False)
+        if self.player is not None:
+            try:
+                self.player.stop()
+            except Exception:
+                pass
+        self.current_track = None
+        self.current_path = ""
+        self.track_duration = 0
+        self.queue = []
+        self.queue_index = -1
+        self.history = []
+        self.history_pos = -1
+        self.player_bar.set_track(None)
+        self.player_bar.set_playing(False)
+        self.player_bar.set_queue([], -1)
+
         self.music_folder = Path(folder).resolve()
         self._music_folder_configured = True
         self.settings["music_folder"] = str(self.music_folder)
@@ -3501,6 +3517,7 @@ class MainWindow(QMainWindow):
         self.home._loaded_once = False
         self.library.results = []
         self.library.track_list.set_tracks([])
+        self.history_page.refresh()
 
     def _load_or_scan_existing(self) -> None:
         count = 0
@@ -3684,7 +3701,10 @@ class MainWindow(QMainWindow):
     def show_home(self) -> None:
         self.stack.setCurrentWidget(self.library)
         self.sidebar.set_active(self.sidebar.btn_home)
+        self.search_header._timer.stop()
+        self.search_header.edit.blockSignals(True)
         self.search_header.edit.clear()
+        self.search_header.edit.blockSignals(False)
         self.library.refresh("")
         self.library.set_playing(self.current_path)
         self.home.set_now_playing(self.current_track)
@@ -3746,6 +3766,7 @@ class MainWindow(QMainWindow):
             "file_path": "",
             "relative_path": "",
             "favorite": False,
+            "listened_ms": 0,
         }
         for key, value in defaults.items():
             result.setdefault(key, value)
