@@ -45,10 +45,13 @@ class IncrementalScannerTests(unittest.TestCase):
         return finished[0]
 
     def get_tracks(self):
-        with sqlite3.connect(main.DB_PATH) as conn:
+        conn = sqlite3.connect(main.DB_PATH)
+        try:
             return conn.execute(
                 "SELECT file_path, track_name, file_size, mtime FROM tracks ORDER BY file_path"
             ).fetchall()
+        finally:
+            conn.close()
 
     def test_unchanged_tracks_skip_metadata_parsing(self):
         track = self.make_track(self.music, "one.mp3")
