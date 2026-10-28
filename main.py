@@ -1362,7 +1362,7 @@ def rounded_pixmap(image: Optional[QImage], size: int, radius: int = 14) -> QPix
 
 class WorkerSignals(QObject):
     ready = pyqtSignal(object)
-    finished = pyqtSignal(int)
+    finished = pyqtSignal(object)
 
 
 class CoverTaskRegistry(QObject):
@@ -1379,7 +1379,7 @@ class CoverTaskRegistry(QObject):
         task.signals.finished.connect(self._release)
         QThreadPool.globalInstance().start(task)
 
-    def _release(self, task_id: int) -> None:
+    def _release(self, task_id: object) -> None:
         self._tasks.pop(int(task_id), None)
 
 
