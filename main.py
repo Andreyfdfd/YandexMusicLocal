@@ -651,7 +651,7 @@ def build_local_wave(
     tracks: list[dict],
     artist_listening_ms: Optional[dict[str, int]] = None,
 ) -> list[dict]:
-    """Create a weighted local-library mix with artist variety and discovery bias."""
+    """Create a weighted local-library mix while avoiding artist dead ends."""
     artist_listening_ms = artist_listening_ms or {}
     remaining: list[tuple[dict, float]] = []
     for original in tracks:
@@ -673,14 +673,45 @@ def build_local_wave(
     mix: list[dict] = []
     previous_artist = ""
     while remaining:
+        artist_keys = [
+            safe_text(track.get("artist"), "Неизвестный исполнитель").casefold()
+            for track, _weight in remaining
+        ]
+        artist_counts: dict[str, int] = {}
+        for artist_key in artist_keys:
+            artist_counts[artist_key] = artist_counts.get(artist_key, 0) + 1
+
         eligible = [
-            index
-            for index, (track, _weight) in enumerate(remaining)
-            if safe_text(track.get("artist"), "Неизвестный исполнитель").casefold()
-            != previous_artist
+            index for index, artist_key in enumerate(artist_keys)
+            if artist_key != previous_artist
         ]
         if not eligible:
+            # Repetition is unavoidable only when all remaining tracks belong
+            # to the same artist as the previously selected track.
             eligible = list(range(len(remaining)))
+        else:
+            # A locally valid choice can still leave two tracks by one artist
+            # stranded at the end. Keep candidates whose removal leaves a
+            # feasible no-adjacent-artist ordering, whenever such a choice exists.
+            remaining_after = len(remaining) - 1
+            viable: list[int] = []
+            for index in eligible:
+                candidate_artist = artist_keys[index]
+                counts_after = dict(artist_counts)
+                counts_after[candidate_artist] -= 1
+                if counts_after[candidate_artist] > remaining_after // 2:
+                    continue
+                other_limit = (remaining_after + 1) // 2
+                if any(
+                    count > other_limit
+                    for artist, count in counts_after.items()
+                    if artist != candidate_artist
+                ):
+                    continue
+                viable.append(index)
+            if viable:
+                eligible = viable
+
         chosen_index = random.choices(
             eligible,
             weights=[remaining[index][1] for index in eligible],
