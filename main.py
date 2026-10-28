@@ -2850,17 +2850,11 @@ class MainWindow(QMainWindow):
         # it as a selected library unless the user actually configured a folder.
         self.music_folder = configured_folder or Path()
 
-        if vlc is None:
-            raise RuntimeError(
-                "Не удалось загрузить python-vlc.\n\n"
-                f"Ошибка: {VLC_IMPORT_ERROR}\n\n"
-                "Установите VLC Media Player либо используйте EXE-сборку, "
-                "в которую были скопированы libVLC и plugins."
-            )
-
+        # libVLC is initialized lazily at the first playback request so that
+        # opening the library does not pay the native engine startup cost.
         ensure_database_schema()
-        self.vlc_instance = vlc.Instance("--no-video")
-        self.player = self.vlc_instance.media_player_new()
+        self.vlc_instance = None
+        self.player = None
         self.current_path = ""
         self.current_track: Optional[dict] = None
         self.queue: list[dict] = []
@@ -2886,7 +2880,6 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._apply_stylesheet()
         self._load_saved_view_state()
-        self.player.audio_set_volume(int(self.settings.get("volume", 70)))
         self.player_bar.volume_slider.setValue(int(self.settings.get("volume", 70)))
         self.player_bar.set_shuffle(self.shuffle_enabled)
         self.player_bar.set_repeat(self.repeat_mode)
@@ -3299,6 +3292,47 @@ class MainWindow(QMainWindow):
         random.shuffle(tracks)
         self._set_queue(tracks, 0, True)
 
+    def _ensure_player(self) -> bool:
+        if self.player is not None and self.vlc_instance is not None:
+            return True
+
+        if vlc is None:
+            details = str(VLC_IMPORT_ERROR or "модуль python-vlc не найден")
+            QMessageBox.warning(
+                self,
+                "Воспроизведение недоступно",
+                "Не удалось загрузить python-vlc.\n\n"
+                f"{details}\n\n"
+                "Установите зависимости проекта и VLC Media Player, "
+                "либо используйте EXE-сборку с libVLC."
+            )
+            return False
+
+        try:
+            instance = vlc.Instance("--no-video")
+            if instance is None:
+                raise RuntimeError("libVLC не создал экземпляр проигрывателя")
+            player = instance.media_player_new()
+            if player is None:
+                instance.release()
+                raise RuntimeError("libVLC не создал медиаплеер")
+
+            self.vlc_instance = instance
+            self.player = player
+            self.player.audio_set_volume(int(self.player_bar.volume_slider.value()))
+            return True
+        except Exception as exc:
+            self.vlc_instance = None
+            self.player = None
+            QMessageBox.warning(
+                self,
+                "Не удалось запустить аудиодвижок",
+                f"{exc}\n\n"
+                "Проверь, что VLC Media Player установлен или рядом с приложением "
+                "есть папка vlc с libVLC и plugins."
+            )
+            return False
+
     def _start_current(self) -> None:
         if not (0 <= self.queue_index < len(self.queue)):
             return
@@ -3307,6 +3341,9 @@ class MainWindow(QMainWindow):
         if not path or not Path(path).is_file():
             self.statusBar().showMessage(f"Файл не найден: {path}", 5000)
             self.play_next()
+            return
+
+        if not self._ensure_player():
             return
 
         try:
@@ -3342,6 +3379,9 @@ class MainWindow(QMainWindow):
     def toggle_play_pause(self) -> None:
         if self.queue_index < 0:
             return
+        if self.player is None or not self.current_path:
+            self._start_current()
+            return
         try:
             state = self.player.get_state()
             if state == vlc.State.Playing:
@@ -3361,8 +3401,11 @@ class MainWindow(QMainWindow):
         if not self.queue:
             return
         if self.repeat_mode == 2:
-            self.player.set_time(0)
-            self.player.play()
+            if self.player is None:
+                self._start_current()
+            else:
+                self.player.set_time(0)
+                self.player.play()
             return
 
         if self.shuffle_enabled and len(self.queue) > 1:
@@ -3375,7 +3418,8 @@ class MainWindow(QMainWindow):
             if self.repeat_mode == 1:
                 next_index = 0
             else:
-                self.player.stop()
+                if self.player is not None:
+                    self.player.stop()
                 self.player_bar.set_playing(False)
                 return
 
@@ -3413,7 +3457,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(names[self.repeat_mode], 1800)
 
     def change_volume(self, value: int) -> None:
-        self.player.audio_set_volume(int(value))
+        if self.player is not None:
+            self.player.audio_set_volume(int(value))
         self.settings["volume"] = int(value)
         self._settings_timer.start()
 
@@ -3539,8 +3584,10 @@ class MainWindow(QMainWindow):
                 }
             save_settings(self.settings)
             self.playback_timer.stop()
-            self.player.stop()
-            self.vlc_instance.release()
+            if self.player is not None:
+                self.player.stop()
+            if self.vlc_instance is not None:
+                self.vlc_instance.release()
         except Exception:
             pass
         super().closeEvent(event)
