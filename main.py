@@ -36,6 +36,7 @@ import json
 import os
 import random
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
