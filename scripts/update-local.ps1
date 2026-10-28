@@ -24,7 +24,7 @@ function Invoke-Git {
 }
 
 $origin = (& git -C $ProjectRoot remote get-url origin 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or $origin -notmatch 'github\.com[:/]Andreyfdfd/YandexMusicLocal(?:-)?\.git/?$') {
+if ($LASTEXITCODE -ne 0 -or $origin -notmatch 'github\.com[:/]Andreyfdfd/YandexMusicLocal(?:-)?(?:\.git)?/?$') {
     throw "Папка не подключена к ожидаемому GitHub-репозиторию (origin='$origin'). Ничего не изменено."
 }
 
@@ -50,7 +50,7 @@ $localBranch = (& git -C $ProjectRoot branch --list $Branch | Out-String).Trim()
 if ($localBranch) {
     Invoke-Git -GitArgs @('switch', $Branch)
 } else {
-    Invoke-Git -GitArgs @('switch', '--track', $remoteRef)
+    Invoke-Git -GitArgs @('switch', '--track', "origin/$Branch")
 }
 
 Write-Host '[3/4] Обновление без принудительного сброса...' -ForegroundColor Cyan
