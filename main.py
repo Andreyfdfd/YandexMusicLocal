@@ -3363,6 +3363,7 @@ class MainWindow(QMainWindow):
         self.vlc_instance = None
         self.player = None
         self.current_path = ""
+        self._player_media_path = ""
         self.current_track: Optional[dict] = None
         self.queue: list[dict] = []
         self.queue_index = -1
@@ -3535,6 +3536,7 @@ class MainWindow(QMainWindow):
         self.player_bar.set_track(None)
         self.player_bar.set_playing(False)
         self.player_bar.set_queue([], -1)
+        self._player_media_path = ""
         self.home.set_now_playing(None)
         self.album_page.track_list.set_playing_path(None)
         self.library.set_playing(None)
@@ -3927,6 +3929,7 @@ class MainWindow(QMainWindow):
             result = self.player.play()
             if result == -1:
                 raise RuntimeError("VLC не смог начать воспроизведение")
+            self._player_media_path = path
         except Exception as exc:
             QMessageBox.warning(self, "Ошибка воспроизведения", str(exc))
             return
@@ -3957,7 +3960,11 @@ class MainWindow(QMainWindow):
     def toggle_play_pause(self) -> None:
         if self.queue_index < 0:
             return
-        if self.player is None or not self.current_path:
+        if (
+            self.player is None
+            or not self.current_path
+            or self._player_media_path != self.current_path
+        ):
             self._start_current()
             return
         try:
@@ -3982,13 +3989,22 @@ class MainWindow(QMainWindow):
         if not self.queue:
             return
         if self.repeat_mode == 2:
-            # Repeat-one is meaningful only after a player has loaded a track.
-            # Do not recurse into _start_current when a missing-file error has
-            # already sent control back to play_next.
+            # Repeat-one is meaningful only after the selected track is loaded.
             if self.player is None:
+                return
+            if self._player_media_path != self.current_path:
+                self._start_current()
                 return
             self.player.set_time(0)
             self.player.play()
+            self.player_bar.set_playing(True)
+            self.home.now.set_playing(True)
+            if self._listening_session_id is None and self.current_track:
+                self._listening_session_id = start_listening_session(self.current_track)
+                self._listening_session_ms = 0
+                self._listening_base_ms = int(self.current_track.get("listened_ms") or 0)
+                self._listening_last_sample = None
+                self._listening_last_flush_ms = 0
             return
 
         if self.shuffle_enabled and len(self.queue) > 1:
@@ -4109,6 +4125,7 @@ class MainWindow(QMainWindow):
                 self.player.stop()
             except Exception:
                 pass
+        self._player_media_path = ""
         self.queue = [self._normalise_track(track) for track in tracks]
         self.queue_index = 0
         self.history = [0]
