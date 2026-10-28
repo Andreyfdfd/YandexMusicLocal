@@ -957,7 +957,7 @@ def fetch_artist_track_history(artist: str, limit: int = 500) -> list[dict]:
                FROM listening_sessions
                WHERE artist = ? COLLATE NOCASE
                GROUP BY track_key
-               ORDER BY SUM(listened_ms) DESC, MAX(started_at) DESC,
+               ORDER BY COUNT(*) DESC, SUM(listened_ms) DESC, MAX(started_at) DESC,
                         MAX(track_name) COLLATE NOCASE LIMIT ?""",
             (str(artist), int(limit)),
         ).fetchall()
@@ -3343,7 +3343,7 @@ class ListeningHistoryPage(QWidget):
         else:
             self.page_title.setText(self.current_artist)
             self.subtitle.setText(
-                "Композиции исполнителя, отсортированные по суммарному времени прослушивания"
+                "Композиции, которые вы слушали чаще всего · время показано суммарно"
             )
             self.back_button.setVisible(True)
             self.table.setHorizontalHeaderLabels(
@@ -4592,7 +4592,6 @@ class MainWindow(QMainWindow):
                         self._listening_generation, self._listening_session_ms
                     )
                     self._listening_last_flush_ms = self._listening_session_ms
-                    total_listened = self._listening_base_ms + self._listening_session_ms
                     if self.stack.currentWidget() is self.history_page:
                         self.history_page.refresh()
             else:
