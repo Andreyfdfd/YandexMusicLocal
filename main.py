@@ -4309,7 +4309,10 @@ class MainWindow(QMainWindow):
                 color: {ACCENT};
                 font-weight: 650;
             }}
-            #Content {{ background: {BG}; }}
+            #Content {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #121214, stop:0.55 #101012, stop:1 #141416);
+            }}
             #SearchIcon {{ color: #77777c; font-size: 22px; }}
             #SearchField {{
                 background: #171718;
@@ -4326,11 +4329,11 @@ class MainWindow(QMainWindow):
                 border-color: #4a4429;
             }}
             #HeaderStatus {{ color: #66666b; font-size: 10px; min-width: 70px; }}
-            #PageTitle {{ font-size: 27px; font-weight: 750; color: white; }}
-            #PageTitleLarge {{ font-size: 30px; font-weight: 800; color: white; }}
-            #SectionTitle {{ font-size: 18px; font-weight: 700; color: white; }}
-            #MutedText {{ color: {MUTED}; font-size: 11px; }}
-            #DimText {{ color: {DIM}; font-size: 11px; }}
+            #PageTitle {{ font-size: 29px; font-weight: 800; color: white; }}
+            #PageTitleLarge {{ font-size: 32px; font-weight: 800; color: white; }}
+            #SectionTitle {{ font-size: 19px; font-weight: 750; color: white; }}
+            #MutedText {{ color: #b9b9bf; font-size: 11px; }}
+            #DimText {{ color: #8d8d94; font-size: 11px; }}
             #AccentCaption {{
                 color: {ACCENT};
                 font-size: 9px;
@@ -4354,13 +4357,15 @@ class MainWindow(QMainWindow):
                 border-radius: 22px;
             }}
             #AlbumCard {{
-                background: #151517;
-                border: 1px solid #242427;
-                border-radius: 18px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1b1b1e, stop:1 #141416);
+                border: 1px solid #2c2c31;
+                border-radius: 20px;
             }}
             #AlbumCard:hover {{
-                background: #1c1c1f;
-                border-color: #41402f;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #28251b, stop:1 #1b1b1e);
+                border-color: #5a5025;
             }}
             #AlbumCard QLabel {{
                 background: transparent;
@@ -4385,13 +4390,17 @@ class MainWindow(QMainWindow):
             #AccentButton:hover {{ background: {ACCENT_HOVER}; }}
             #AccentButton:pressed {{ background: {ACCENT_PRESSED}; }}
             #GhostButton {{
-                background: #222223;
-                color: #f2f2f3;
-                border: none;
-                border-radius: 10px;
-                padding: 8px 13px;
+                background: #252528;
+                color: #f4f4f5;
+                border: 1px solid #303034;
+                border-radius: 12px;
+                padding: 9px 14px;
             }}
-            #GhostButton:hover {{ background: #2d2d2f; color: {ACCENT}; }}
+            #GhostButton:hover {{
+                background: #34332b;
+                border-color: #4b4323;
+                color: {ACCENT_HOVER};
+            }}
             #Combo, #QueueCombo {{
                 background: #181819;
                 color: #e9e9eb;
@@ -4444,9 +4453,11 @@ class MainWindow(QMainWindow):
                 background: #242116;
                 border-color: #4c451f;
             }}
-            #RowNum {{ color: #65656a; font-size: 11px; }}
-            #RowYear {{ color: #6e6e73; font-size: 10px; }}
-            #RowDuration {{ color: #8b8b90; font-size: 11px; }}
+            #RowNum {{ color: #85858c; font-size: 11px; }}
+            #RowYear {{ color: #85858c; font-size: 10px; }}
+            #RowListened {{ color: #a0a0a7; font-size: 11px; }}
+            #TrackRow[playing="true"] #RowListened {{ color: {ACCENT}; font-weight: 650; }}
+            #RowDuration {{ color: #b0b0b6; font-size: 11px; }}
             #PlayerBar {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #171719, stop:0.18 #121214, stop:1 #0c0c0e);
@@ -4491,7 +4502,59 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:vertical {{ background: #303034; border-radius: 4px; min-height: 45px; }}
             QScrollBar::handle:vertical:hover {{ background: #47474b; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-            #StatusBar {{ background: #0d0d0e; color: #68686c; border-top: 1px solid #1e1e20; }}
+            #HistoryMetricCard {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #24221b, stop:1 #18181b);
+                border: 1px solid #383222;
+                border-radius: 18px;
+            }}
+            #HistoryMetricCaption {{
+                color: #aaaaaf;
+                font-size: 10px;
+                font-weight: 750;
+                letter-spacing: 1px;
+            }}
+            #HistoryMetricValue {{
+                color: {ACCENT_HOVER};
+                font-size: 24px;
+                font-weight: 800;
+            }}
+            #EmptyState {{
+                color: #a0a0a7;
+                background: #161619;
+                border: 1px dashed #343439;
+                border-radius: 16px;
+                padding: 26px;
+            }}
+            QTableWidget#HistoryTable {{
+                background: #141416;
+                alternate-background-color: #18181b;
+                color: #eeeeef;
+                border: 1px solid #2b2b30;
+                border-radius: 14px;
+                padding: 4px;
+                selection-background-color: #343022;
+                selection-color: #ffffff;
+                outline: 0;
+            }}
+            QTableWidget#HistoryTable::item {{
+                padding: 8px 9px;
+                border-bottom: 1px solid #242428;
+            }}
+            QTableWidget#HistoryTable::item:selected {{
+                background: #302b1b;
+                color: #ffffff;
+            }}
+            QHeaderView::section {{
+                background: #1d1d20;
+                color: #aaaab0;
+                border: none;
+                border-bottom: 1px solid #37373b;
+                padding: 11px 10px;
+                font-size: 10px;
+                font-weight: 700;
+            }}
+            #StatusBar {{ background: #0d0d0f; color: #8a8a91; border-top: 1px solid #26262a; }}
             #ScanOverlay {{ background: rgba(8, 8, 9, 230); }}
             #ScanCard {{ background: #19191b; border: 1px solid #333336; border-radius: 18px; }}
             #ScanTitle {{ font-size: 21px; font-weight: 800; }}
