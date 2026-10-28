@@ -143,6 +143,22 @@ def save_settings(data: dict) -> None:
 
 
 def _desktop_path() -> Path:
+    # Ask Windows for the real desktop known-folder path first. The Desktop
+    # directory may be redirected to OneDrive or another location, so building
+    # a shortcut under USERPROFILE\\Desktop can create a duplicate elsewhere.
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            buffer = ctypes.create_unicode_buffer(32768)
+            result = ctypes.windll.shell32.SHGetFolderPathW(
+                None, 0x0010, None, 0, buffer
+            )
+            if result == 0 and buffer.value:
+                return Path(buffer.value)
+        except (AttributeError, OSError, ValueError):
+            pass
+
     candidates = [
         Path.home() / "Desktop",
         Path(os.environ.get("USERPROFILE", "")) / "Desktop",
