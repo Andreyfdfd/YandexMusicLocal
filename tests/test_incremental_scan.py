@@ -209,5 +209,65 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertIn("idx_tracks_relative_path", indexes)
 
 
+    def test_listening_sessions_persist_time_and_rank_tracks(self):
+        self.make_track(self.music, "first.mp3")
+        self.make_track(self.music, "second.mp3")
+        self.assertEqual(self.run_scan(self.music), (2, 0))
+
+        tracks = main.fetch_all_tracks(self.music, "Название", False)
+        by_name = {track["track_name"]: track for track in tracks}
+        first_session = main.start_listening_session(by_name["first"])
+        second_session = main.start_listening_session(by_name["second"])
+        self.assertIsNotNone(first_session)
+        self.assertIsNotNone(second_session)
+        main.update_listening_session(first_session, 120_000, finished=True)
+        main.update_listening_session(second_session, 300_000, finished=True, completed=True)
+
+        summary = main.fetch_listening_summary()
+        self.assertEqual(summary["listened_ms"], 420_000)
+        self.assertEqual(summary["sessions"], 2)
+        self.assertEqual(summary["tracks"], 2)
+
+        ranked = main.fetch_all_tracks(self.music, "Время прослушивания", True)
+        self.assertEqual(ranked[0]["track_name"], "second")
+        self.assertEqual(ranked[0]["listened_ms"], 300_000)
+        self.assertEqual(ranked[1]["track_name"], "first")
+        self.assertEqual(ranked[1]["listened_ms"], 120_000)
+
+        history = main.fetch_listening_view("История")
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0]["title"], "second")
+        self.assertTrue(history[0]["completed"])
+
+        artists = main.fetch_listening_view("Исполнители")
+        self.assertEqual(len(artists), 1)
+        self.assertEqual(artists[0]["listened_ms"], 420_000)
+
+        albums = main.fetch_listening_view("Альбомы")
+        self.assertEqual(len(albums), 1)
+        self.assertEqual(albums[0]["listened_ms"], 420_000)
+
+    def test_album_default_sort_is_most_tracks_first(self):
+        self.make_track(self.music, "single.mp3")
+        larger_album = self.music / "Test Artist" / "Album With More Tracks"
+        larger_album.mkdir(parents=True)
+        (larger_album / "one.mp3").write_bytes(b"fake audio 1")
+        (larger_album / "two.mp3").write_bytes(b"fake audio 2")
+        self.assertEqual(self.run_scan(self.music), (3, 0))
+
+        albums = main.fetch_albums()
+        self.assertGreaterEqual(len(albums), 2)
+        self.assertEqual(albums[0]["album"], "Album With More Tracks")
+        self.assertEqual(albums[0]["track_count"], 2)
+        self.assertEqual(albums[1]["track_count"], 1)
+
+    def test_listening_time_format_is_readable(self):
+        self.assertEqual(main.format_listening_ms(0), "—")
+        self.assertEqual(main.format_listening_ms(30_000), "< 1 мин")
+        self.assertEqual(main.format_listening_ms(45 * 60_000), "45 мин")
+        self.assertEqual(main.format_listening_ms(3_660_000), "1 ч 01 мин")
+        self.assertEqual(main.format_listening_ms(7_200_000), "2 ч")
+
+
 if __name__ == "__main__":
     unittest.main()
