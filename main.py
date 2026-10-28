@@ -3424,11 +3424,13 @@ class MainWindow(QMainWindow):
         if not self.queue:
             return
         if self.repeat_mode == 2:
+            # Repeat-one is meaningful only after a player has loaded a track.
+            # Do not recurse into _start_current when a missing-file error has
+            # already sent control back to play_next.
             if self.player is None:
-                self._start_current()
-            else:
-                self.player.set_time(0)
-                self.player.play()
+                return
+            self.player.set_time(0)
+            self.player.play()
             return
 
         if self.shuffle_enabled and len(self.queue) > 1:
