@@ -774,13 +774,11 @@ def build_local_wave(
         artist_key = safe_text(track.get("artist"), "Неизвестный исполнитель").casefold()
         track_minutes = max(0, int(track.get("listened_ms") or 0)) / 60_000
         artist_minutes = max(0, int(artist_listening_ms.get(artist_key, 0))) / 60_000
-        favorite_boost = 1.7 if track.get("favorite") else 0.0
         discovery_boost = 1.0 if track_minutes < 2 else 0.0
         weight = (
             1.0
             + math.log1p(track_minutes) * 0.45
             + math.log1p(artist_minutes) * 0.65
-            + favorite_boost
             + discovery_boost
         )
         remaining.append((track, max(0.1, weight)))
@@ -4703,14 +4701,14 @@ class MainWindow(QMainWindow):
     def _apply_stylesheet(self) -> None:
         self.setStyleSheet(
             f"""
-            QMainWindow {{
-                background: {BG};
+            QWidget {{
+                background-color: transparent;
                 color: {TEXT};
                 font-family: "Segoe UI";
                 font-size: 13px;
             }}
-            QWidget {{
-                background-color: transparent;
+            QMainWindow {{
+                background: {BG};
                 color: {TEXT};
                 font-family: "Segoe UI";
                 font-size: 13px;
