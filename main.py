@@ -1670,6 +1670,15 @@ def fetch_albums(sort_mode: str = "Количество треков", reverse: 
         ).fetchall()
     finally:
         conn.close()
+    if sort_mode == "Количество треков":
+        # Python-side tie-break makes the desired default deterministic across
+        # SQLite versions and avoids alias-resolution differences in ORDER BY.
+        rows.sort(
+            key=lambda row: (
+                -int(row[5] or 0) if reverse else int(row[5] or 0),
+                safe_text(row[2], "Без названия").casefold(),
+            )
+        )
     return [
         {
             "id": int(row[0]),
