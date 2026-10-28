@@ -85,16 +85,16 @@ TRACK_BATCH = 90
 ALBUM_BATCH = 30
 
 # Палитра — близкая к современной тёмной схеме музыкальных клиентов.
-BG = "#0e0e10"
-BG_DEEP = "#09090b"
-SURFACE = "#171719"
-SURFACE_HOVER = "#202023"
-SURFACE_ACTIVE = "#28282c"
-SURFACE_SOFT = "#131315"
-BORDER = "#2a2a2e"
+BG = "#111114"
+BG_DEEP = "#0c0c0f"
+SURFACE = "#19191d"
+SURFACE_HOVER = "#25252a"
+SURFACE_ACTIVE = "#303035"
+SURFACE_SOFT = "#151518"
+BORDER = "#303036"
 TEXT = "#ffffff"
-MUTED = "#aaaaaf"
-DIM = "#78787f"
+MUTED = "#b8b8c0"
+DIM = "#8c8c96"
 ACCENT = "#ffdf00"
 ACCENT_HOVER = "#ffe84a"
 ACCENT_PRESSED = "#e6c900"
@@ -4448,7 +4448,7 @@ class MainWindow(QMainWindow):
             }}
             #Sidebar {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #0b0b0d, stop:1 #09090b);
+                    stop:0 #111114, stop:1 #0c0c0f);
                 border-right: 1px solid #202023;
             }}
             #LogoMark {{
@@ -4502,11 +4502,11 @@ class MainWindow(QMainWindow):
             }}
             #Content {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #121214, stop:0.55 #101012, stop:1 #141416);
+                    stop:0 #17171b, stop:0.55 #131317, stop:1 #18181d);
             }}
             #SearchIcon {{ color: #77777c; font-size: 22px; }}
             #SearchField {{
-                background: #171718;
+                background: #1c1c21;
                 border: 1px solid transparent;
                 border-radius: 20px;
                 color: white;
@@ -4537,26 +4537,26 @@ class MainWindow(QMainWindow):
             #HeroMetaSecondary {{ color: #77777c; font-size: 10px; }}
             #NowPlayingHero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #28251a, stop:0.38 #1c1b18, stop:1 #141416);
-                border: 1px solid #383222;
+                    stop:0 #302b1d, stop:0.38 #222124, stop:1 #19191d);
+                border: 1px solid #494126;
                 border-radius: 22px;
             }}
             #AlbumHero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #24221b, stop:0.48 #1a1a1c, stop:1 #141416);
-                border: 1px solid #302c20;
+                    stop:0 #2c291e, stop:0.48 #202024, stop:1 #18181c);
+                border: 1px solid #443d27;
                 border-radius: 22px;
             }}
             #AlbumCard {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #1b1b1e, stop:1 #141416);
-                border: 1px solid #2c2c31;
+                    stop:0 #222227, stop:1 #19191e);
+                border: 1px solid #393941;
                 border-radius: 20px;
             }}
             #AlbumCard:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #28251b, stop:1 #1b1b1e);
-                border-color: #5a5025;
+                    stop:0 #302c1c, stop:1 #222227);
+                border-color: #6a5d27;
             }}
             #AlbumCard QLabel {{
                 background: transparent;
@@ -4652,12 +4652,12 @@ class MainWindow(QMainWindow):
                 border-radius: 12px;
             }}
             #TrackRow:hover {{
-                background: #1b1b1e;
-                border-color: #252528;
+                background: #222227;
+                border-color: #35353b;
             }}
             #TrackRow[playing="true"] {{
-                background: #242116;
-                border-color: #4c451f;
+                background: #2a271a;
+                border-color: #665b27;
             }}
             #RowNum {{ color: #85858c; font-size: 11px; }}
             #RowYear {{ color: #85858c; font-size: 10px; }}
@@ -4666,8 +4666,8 @@ class MainWindow(QMainWindow):
             #RowDuration {{ color: #b0b0b6; font-size: 11px; }}
             #PlayerBar {{
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #171719, stop:0.18 #121214, stop:1 #0c0c0e);
-                border-top: 1px solid #2a2a2d;
+                    stop:0 #1d1d22, stop:0.18 #17171b, stop:1 #111114);
+                border-top: 1px solid #37373e;
             }}
             #TinyText {{ color: #808085; font-size: 9px; }}
             #VolumeIcon {{ color: #8a8a90; font-size: 15px; }}
@@ -4710,8 +4710,8 @@ class MainWindow(QMainWindow):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
             #HistoryMetricCard {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #24221b, stop:1 #18181b);
-                border: 1px solid #383222;
+                    stop:0 #302d20, stop:1 #1f1f24);
+                border: 1px solid #494126;
                 border-radius: 18px;
             }}
             #HistoryMetricCaption {{
@@ -4733,13 +4733,13 @@ class MainWindow(QMainWindow):
                 padding: 26px;
             }}
             QTableWidget#HistoryTable {{
-                background: #141416;
-                alternate-background-color: #18181b;
-                color: #eeeeef;
-                border: 1px solid #2b2b30;
+                background: #19191e;
+                alternate-background-color: #202025;
+                color: #f4f4f5;
+                border: 1px solid #36363e;
                 border-radius: 14px;
                 padding: 4px;
-                selection-background-color: #343022;
+                selection-background-color: #4a4123;
                 selection-color: #ffffff;
                 outline: 0;
             }}
@@ -4748,19 +4748,19 @@ class MainWindow(QMainWindow):
                 border-bottom: 1px solid #242428;
             }}
             QTableWidget#HistoryTable::item:selected {{
-                background: #302b1b;
+                background: #40391f;
                 color: #ffffff;
             }}
             QHeaderView::section {{
-                background: #1d1d20;
-                color: #aaaab0;
+                background: #242429;
+                color: #c1c1c8;
                 border: none;
-                border-bottom: 1px solid #37373b;
+                border-bottom: 1px solid #45454d;
                 padding: 11px 10px;
                 font-size: 10px;
                 font-weight: 700;
             }}
-            #StatusBar {{ background: #0d0d0f; color: #8a8a91; border-top: 1px solid #26262a; }}
+            #StatusBar {{ background: #111114; color: #a0a0a8; border-top: 1px solid #303036; }}
             #ScanOverlay {{ background: rgba(8, 8, 9, 230); }}
             #ScanCard {{ background: #19191b; border: 1px solid #333336; border-radius: 18px; }}
             #ScanTitle {{ font-size: 21px; font-weight: 800; }}
