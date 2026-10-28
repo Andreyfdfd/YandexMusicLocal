@@ -2144,6 +2144,29 @@ class NowPlayingHero(QFrame):
 # ============================================================================
 
 
+class AlbumQuerySignals(QObject):
+    finished = pyqtSignal(int, object, str)
+
+
+class AlbumQueryTask(QRunnable):
+    """Loads album summaries from SQLite without blocking the Qt UI thread."""
+
+    def __init__(self, generation: int, sort_mode: str, reverse: bool):
+        super().__init__()
+        self.generation = generation
+        self.sort_mode = sort_mode
+        self.reverse = reverse
+        self.signals = AlbumQuerySignals()
+        self.setAutoDelete(True)
+
+    def run(self) -> None:
+        try:
+            albums = fetch_albums(self.sort_mode, self.reverse)
+            self.signals.finished.emit(self.generation, albums, "")
+        except Exception as exc:
+            self.signals.finished.emit(self.generation, [], str(exc))
+
+
 class HomePage(QWidget):
     album_selected = pyqtSignal(int)
     album_play_requested = pyqtSignal(int)
@@ -2158,6 +2181,11 @@ class HomePage(QWidget):
         self._loaded_once = False
         self._created = 0
         self._columns = 1
+        self._query_generation = 0
+        self._query_in_progress = False
+        self._query_task = None
+        self._sort_mode = "Исполнитель"
+        self._reverse = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 8, 28, 22)
@@ -2219,9 +2247,37 @@ class HomePage(QWidget):
 
     def load_albums(self, mode="Исполнитель", reverse=False) -> None:
         self._loaded_once = True
-        albums = fetch_albums(mode, reverse)
-        self._albums = albums
-        self.count.setText(f"{len(albums)} альбомов")
+        self._sort_mode = mode
+        self._reverse = bool(reverse)
+        self._query_generation += 1
+        generation = self._query_generation
+        self._query_in_progress = True
+        self.count.setText("Загружаем альбомы…")
+
+        # SQLite aggregation is now off the UI thread. Stale query results are
+        # discarded when the user changes sorting or a newer refresh is requested.
+        task = AlbumQueryTask(generation, mode, self._reverse)
+        self._query_task = task
+        task.signals.finished.connect(self._albums_loaded)
+        QThreadPool.globalInstance().start(task)
+
+    def _albums_loaded(self, generation: int, albums: list, error: str) -> None:
+        if generation != self._query_generation:
+            return
+
+        self._query_in_progress = False
+        self._query_task = None
+        if error:
+            self.count.setText("Не удалось загрузить библиотеку")
+            self.count.setToolTip(error)
+            return
+
+        self.count.setToolTip("")
+        self._render_albums(albums)
+
+    def _render_albums(self, albums: list[dict]) -> None:
+        self._albums = list(albums)
+        self.count.setText(f"{len(self._albums)} альбомов")
 
         for card in self.cards:
             card.setParent(None)
@@ -2240,9 +2296,9 @@ class HomePage(QWidget):
         # album. Cards are materialized only near the viewport as the user scrolls.
         row_step = ALBUM_CARD_HEIGHT + self.grid.verticalSpacing()
         row_count = (len(self._albums) + self._columns - 1) // self._columns
+        margins = self.grid.contentsMargins()
         self.grid_widget.setMinimumHeight(
-            max(1, row_count * row_step + self.grid.contentsMargins().top()
-                + self.grid.contentsMargins().bottom())
+            max(1, row_count * row_step + margins.top() + margins.bottom())
         )
         self._append_album_batch()
         QTimer.singleShot(0, self._update_visible_covers)
@@ -2295,8 +2351,11 @@ class HomePage(QWidget):
         width = max(750, self.scroll.viewport().width())
         columns = max(2, min(8, (width - 24) // (ALBUM_CARD_WIDTH + 20)))
         if columns != self._columns:
-            mode, reverse = self.sort.current()
-            self.load_albums(mode, reverse)
+            if self._query_in_progress:
+                # The upcoming query result will be rendered using the new width.
+                return
+            # Resizing changes layout, not the album data; avoid another SQLite query.
+            self._render_albums(self._albums)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
