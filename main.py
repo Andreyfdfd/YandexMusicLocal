@@ -398,7 +398,9 @@ CREATE TABLE IF NOT EXISTS tracks (
 def db_connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+    # Journal mode is persistent for the database and is set during schema
+    # initialization. Reissuing PRAGMA journal_mode=WAL on every read connection
+    # can contend with a concurrent scanner transaction.
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.create_function(
         "CASEFOLD",
@@ -413,6 +415,10 @@ def ensure_database_schema() -> None:
     conn = sqlite3.connect(DB_PATH, timeout=20)
     try:
         conn.execute("PRAGMA foreign_keys = ON")
+        current_journal = conn.execute("PRAGMA journal_mode").fetchone()
+        if not current_journal or str(current_journal[0]).lower() != "wal":
+            conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
         conn.executescript(SCHEMA_SQL)
         track_cols = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
         album_cols = {row[1] for row in conn.execute("PRAGMA table_info(albums)")}
