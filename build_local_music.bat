@@ -94,6 +94,7 @@ if exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" set "VLC_DIR=%ProgramFiles%\Vi
 if not defined VLC_DIR if exist "%ProgramFiles(x86)%\VideoLAN\VLC\libvlc.dll" set "VLC_DIR=%ProgramFiles(x86)%\VideoLAN\VLC"
 
 if defined VLC_DIR (
+    if not exist "%STAGED_APP%\vlc" mkdir "%STAGED_APP%\vlc"
     copy /Y "%VLC_DIR%\libvlc.dll" "%STAGED_APP%\vlc\" >nul
     if errorlevel 1 goto VLC_COPY_ERROR
     copy /Y "%VLC_DIR%\libvlccore.dll" "%STAGED_APP%\vlc\" >nul
