@@ -7,21 +7,23 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $ProjectRoot
 
-Write-Host "Project: $ProjectRoot" -ForegroundColor Cyan
-Write-Host "Python:" -ForegroundColor Cyan
-python --version
-
-$entryPoint = Join-Path $ProjectRoot 'interface_argon_optimized.py'
-if (-not (Test-Path -LiteralPath $entryPoint)) {
-    Write-Warning "Точка входа пока не найдена: $entryPoint"
-    Write-Host "Сначала перенеси актуальный исходник в корень проекта." -ForegroundColor Yellow
-    exit 2
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) {
+    throw 'Python не найден в PATH. Проверь команду py -0p и доступность python.'
 }
 
-Write-Host "Проверка синтаксиса Python..." -ForegroundColor Cyan
+Write-Host "Project: $ProjectRoot" -ForegroundColor Cyan
+python --version
+$entryPoint = Join-Path $ProjectRoot 'main.py'
+
+if (-not (Test-Path -LiteralPath $entryPoint -PathType Leaf)) {
+    throw "Каноническая точка входа не найдена: $entryPoint"
+}
+
+Write-Host 'Проверка синтаксиса main.py...' -ForegroundColor Cyan
 python -m py_compile $entryPoint
 if ($LASTEXITCODE -ne 0) {
     throw "py_compile завершился с кодом $LASTEXITCODE"
 }
 
-Write-Host "Проверка завершена успешно." -ForegroundColor Green
+Write-Host 'Синтаксис main.py корректен.' -ForegroundColor Green
