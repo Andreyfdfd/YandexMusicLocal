@@ -2351,9 +2351,10 @@ class NowPlayingHero(QFrame):
         info.setContentsMargins(0, 6, 0, 6)
         info.setSpacing(5)
 
-        caption = QLabel("СЕЙЧАС ИГРАЕТ")
-        caption.setObjectName("AccentCaption")
-        info.addWidget(caption)
+        self.caption = QLabel("ВЫБРАННЫЙ ТРЕК")
+        self.caption.setObjectName("AccentCaption")
+        self._is_playing = False
+        info.addWidget(self.caption)
 
         self.title = QLabel("Ничего не играет")
         self.title.setObjectName("HeroTitle")
@@ -2388,8 +2389,16 @@ class NowPlayingHero(QFrame):
 
         root.addLayout(info, 1)
 
+    def set_playing(self, playing: bool) -> None:
+        playing = bool(playing)
+        if self._is_playing == playing:
+            return
+        self._is_playing = playing
+        self.caption.setText("СЕЙЧАС ИГРАЕТ" if playing else "ВЫБРАННЫЙ ТРЕК")
+
     def set_track(self, track: Optional[dict]) -> None:
         if not track:
+            self.set_playing(False)
             self.title.setText("Ничего не играет")
             self.artist.setText("—")
             self.album.setText("Альбом: —")
@@ -2467,10 +2476,10 @@ class HomePage(QWidget):
         heading = QHBoxLayout()
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
-        title = QLabel("Моя коллекция")
+        title = QLabel("Альбомы")
         title.setObjectName("PageTitle")
         title_box.addWidget(title)
-        self.count = QLabel("Загрузка библиотеки…")
+        self.count = QLabel("Загрузка альбомов…")
         self.count.setObjectName("MutedText")
         title_box.addWidget(self.count)
         heading.addLayout(title_box)
@@ -2628,8 +2637,14 @@ class HomePage(QWidget):
         for card in self.cards[first_index:last_index]:
             card.ensure_cover()
 
-    def set_now_playing(self, track: Optional[dict]) -> None:
+    def set_now_playing(
+        self,
+        track: Optional[dict],
+        playing: Optional[bool] = None,
+    ) -> None:
         self.now.set_track(track)
+        if playing is not None:
+            self.now.set_playing(playing)
         self.now.setVisible(track is not None)
 
     def _relayout(self) -> None:
@@ -3520,6 +3535,9 @@ class MainWindow(QMainWindow):
         self.player_bar.set_track(None)
         self.player_bar.set_playing(False)
         self.player_bar.set_queue([], -1)
+        self.home.set_now_playing(None)
+        self.album_page.track_list.set_playing_path(None)
+        self.library.set_playing(None)
 
         self.music_folder = Path(folder).resolve()
         self._music_folder_configured = True
@@ -3803,7 +3821,7 @@ class MainWindow(QMainWindow):
         self._start_current()
 
     def play_all(self) -> None:
-        tracks = fetch_all_tracks(self.music_folder, "Название", False)
+        tracks = fetch_all_tracks(self.music_folder, "Время прослушивания", True)
         self._set_queue(tracks, 0, False)
 
     def shuffle_all(self) -> None:
@@ -3922,7 +3940,7 @@ class MainWindow(QMainWindow):
         self.player_bar.set_playing(True)
         self.player_bar.set_queue(self.queue, self.queue_index)
         self.player_bar.set_progress(0, self.track_duration)
-        self.home.set_now_playing(track)
+        self.home.set_now_playing(track, playing=True)
         self.album_page.track_list.set_playing_path(path)
         self.library.set_playing(path)
         self._listening_session_id = start_listening_session(track)
@@ -3947,13 +3965,16 @@ class MainWindow(QMainWindow):
             if state == vlc.State.Playing:
                 self.player.pause()
                 self.player_bar.set_playing(False)
+                self.home.now.set_playing(False)
             else:
                 self.player.play()
                 self.player_bar.set_playing(True)
+                self.home.now.set_playing(True)
         except Exception:
             try:
                 self.player.play()
                 self.player_bar.set_playing(True)
+                self.home.now.set_playing(True)
             except Exception:
                 pass
 
@@ -3983,6 +4004,7 @@ class MainWindow(QMainWindow):
                 if self.player is not None:
                     self.player.stop()
                 self.player_bar.set_playing(False)
+                self.home.now.set_playing(False)
                 return
 
         self.queue_index = next_index
@@ -4106,7 +4128,7 @@ class MainWindow(QMainWindow):
         self.player_bar.set_playing(False)
         self.player_bar.set_queue(self.queue, self.queue_index)
         self.player_bar.set_progress(0, self.track_duration)
-        self.home.set_now_playing(track)
+        self.home.set_now_playing(track, playing=False)
         self.album_page.track_list.set_playing_path(path)
         self.library.set_playing(path)
         self.settings["last_track_rel"] = track.get("relative_path", "")
