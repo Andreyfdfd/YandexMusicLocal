@@ -950,6 +950,9 @@ class ScanTask(QRunnable):
                 raise FileNotFoundError(f"Музыкальная папка недоступна: {self.folder}")
 
             ensure_database_schema()
+            # Legacy relative-path migration is done on this worker, never in
+            # the UI thread where a large SQLite index could delay first paint.
+            migrate_relative_paths(self.folder)
 
             # Сначала перечисляем лёгкие пути файлов. Ошибка обхода отменяет
             # сканирование до любых изменений БД, чтобы не потерять индекс.
@@ -2752,6 +2755,12 @@ class MainWindow(QMainWindow):
         self.repeat_mode = int(self.settings.get("repeat_mode", 0) or 0)
         self.track_duration = 0
         self.scan_running = False
+        self.scan_silent = False
+        self.scan_overlay = None
+        self.scan_progress = None
+        self.scan_detail = None
+        self._scan_task = None
+        self._cover_repair_task = None
 
         self._settings_timer = QTimer(self)
         self._settings_timer.setSingleShot(True)
@@ -2887,19 +2896,36 @@ class MainWindow(QMainWindow):
         self.library.track_list.set_tracks([])
 
     def _load_or_scan_existing(self) -> None:
+        count = 0
+        first_track_path = ""
+
         try:
             conn = db_connect()
-            count = int(conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0])
-            conn.close()
+            try:
+                count = int(conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0])
+                row = conn.execute("SELECT file_path FROM tracks ORDER BY id LIMIT 1").fetchone()
+                if row:
+                    first_track_path = str(row[0] or "")
+            finally:
+                conn.close()
         except Exception:
             count = 0
 
-        if count > 0:
-            migrate_relative_paths(self.music_folder)
+        # If the saved database appears to belong to this music folder, show
+        # the cached library immediately and refresh it in the background.
+        # A database from another root must not be shown as if it were current.
+        same_root_hint = bool(
+            first_track_path
+            and ScanTask._is_inside_root(first_track_path, self.music_folder)
+        )
+
+        if count > 0 and same_root_hint:
             self.home.load_albums("Исполнитель", False)
-            self._cover_repair_task = self._make_cover_repair_task()
-            QThreadPool.globalInstance().start(self._cover_repair_task)
+            self.statusBar().showMessage("Библиотека загружена; проверяем изменения…")
+            self.start_scan(silent=True)
         else:
+            # First run, empty database, or a changed music folder: use the
+            # visible scan panel so the user understands why the library is empty.
             self.start_scan()
 
     def _make_cover_repair_task(self) -> CoverRepairTask:
@@ -2910,43 +2936,52 @@ class MainWindow(QMainWindow):
         )
         return task
 
-    def start_scan(self) -> None:
+    def start_scan(self, silent: bool = False) -> None:
         if self.scan_running or not self.music_folder:
             return
+
         self.scan_running = True
-        overlay = QFrame(self)
-        overlay.setObjectName("ScanOverlay")
-        overlay.setGeometry(self.rect())
-        outer = QVBoxLayout(overlay)
-        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.scan_silent = bool(silent)
+        self.scan_overlay = None
+        self.scan_progress = None
+        self.scan_detail = None
 
-        card = QFrame()
-        card.setObjectName("ScanCard")
-        card.setFixedWidth(590)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(34, 30, 34, 30)
-        layout.setSpacing(13)
+        if not self.scan_silent:
+            overlay = QFrame(self)
+            overlay.setObjectName("ScanOverlay")
+            overlay.setGeometry(self.rect())
+            outer = QVBoxLayout(overlay)
+            outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title = QLabel("Индексируем музыкальную библиотеку")
-        title.setObjectName("ScanTitle")
-        layout.addWidget(title)
-        folder_label = QLabel(str(self.music_folder))
-        folder_label.setObjectName("MutedText")
-        folder_label.setWordWrap(True)
-        layout.addWidget(folder_label)
+            card = QFrame()
+            card.setObjectName("ScanCard")
+            card.setFixedWidth(590)
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(34, 30, 34, 30)
+            layout.setSpacing(13)
 
-        self.scan_progress = QProgressBar()
-        self.scan_progress.setRange(0, 100)
-        self.scan_progress.setValue(0)
-        layout.addWidget(self.scan_progress)
-        self.scan_detail = QLabel("Подготовка…")
-        self.scan_detail.setObjectName("DimText")
-        layout.addWidget(self.scan_detail)
+            title = QLabel("Индексируем музыкальную библиотеку")
+            title.setObjectName("ScanTitle")
+            layout.addWidget(title)
+            folder_label = QLabel(str(self.music_folder))
+            folder_label.setObjectName("MutedText")
+            folder_label.setWordWrap(True)
+            layout.addWidget(folder_label)
 
-        outer.addWidget(card)
-        overlay.show()
-        self.scan_overlay = overlay
-        self.statusBar().showMessage("Сканирование библиотеки…")
+            self.scan_progress = QProgressBar()
+            self.scan_progress.setRange(0, 100)
+            self.scan_progress.setValue(0)
+            layout.addWidget(self.scan_progress)
+            self.scan_detail = QLabel("Подготовка…")
+            self.scan_detail.setObjectName("DimText")
+            layout.addWidget(self.scan_detail)
+
+            outer.addWidget(card)
+            overlay.show()
+            self.scan_overlay = overlay
+            self.statusBar().showMessage("Сканирование библиотеки…")
+        else:
+            self.statusBar().showMessage("Проверяем изменения в медиатеке в фоне…")
 
         task = ScanTask(self.music_folder)
         self._scan_task = task
@@ -2956,32 +2991,70 @@ class MainWindow(QMainWindow):
         QThreadPool.globalInstance().start(task)
 
     def _scan_progress(self, current: int, total: int, title: str) -> None:
-        if hasattr(self, "scan_progress"):
+        if self.scan_silent:
+            self.statusBar().showMessage(
+                f"Проверяем медиатеку: {current:,} / {total:,} • {title}".replace(",", " ")
+            )
+        elif self.scan_progress is not None and self.scan_detail is not None:
             self.scan_progress.setValue(int(current * 100 / total) if total else 0)
             self.scan_detail.setText(f"{current:,} / {total:,}   •   {title}".replace(",", " "))
 
+    def _dispose_scan_overlay(self) -> None:
+        overlay = self.scan_overlay
+        self.scan_overlay = None
+        self.scan_progress = None
+        self.scan_detail = None
+        if overlay is not None:
+            overlay.hide()
+            overlay.deleteLater()
+
     def _scan_finished(self, success: int, failed: int) -> None:
+        was_silent = self.scan_silent
         self.scan_running = False
-        if hasattr(self, "scan_overlay"):
-            self.scan_overlay.hide()
-            self.scan_overlay.deleteLater()
+        self.scan_silent = False
+        self._dispose_scan_overlay()
         self._scan_task = None
-        self.home.load_albums("Исполнитель", False)
-        self.library.refresh(self.search_header.edit.text().strip())
+
+        current_page = self.stack.currentWidget()
+        if current_page is self.home:
+            mode, reverse = self.home.sort.current()
+            self.home.load_albums(mode, reverse)
+        else:
+            # Avoid constructing a potentially huge track list while it is hidden.
+            self.home._loaded_once = False
+
+        if current_page is self.library:
+            self.library.refresh(self.search_header.edit.text().strip())
+            self.library.set_playing(self.current_path)
+        elif current_page is self.album_page and self.album_page.album_id is not None:
+            self.album_page.load(self.album_page.album_id)
+            self.album_page.track_list.set_playing_path(self.current_path)
+
         self._cover_repair_task = self._make_cover_repair_task()
         QThreadPool.globalInstance().start(self._cover_repair_task)
-        self.statusBar().showMessage(
-            f"Библиотека готова: {success:,} треков".replace(",", " "),
-            5000,
-        )
+
+        summary = f"Библиотека готова: {success:,} треков".replace(",", " ")
+        if failed:
+            summary += f" • пропущено: {failed:,}".replace(",", " ")
+        if was_silent:
+            summary = "Медиатека проверена · " + summary
+        self.statusBar().showMessage(summary, 7000)
 
     def _scan_error(self, message: str) -> None:
+        was_silent = self.scan_silent
         self.scan_running = False
-        if hasattr(self, "scan_overlay"):
-            self.scan_overlay.hide()
-            self.scan_overlay.deleteLater()
+        self.scan_silent = False
+        self._dispose_scan_overlay()
         self._scan_task = None
-        QMessageBox.critical(self, "Ошибка сканирования", message)
+
+        if was_silent:
+            # Cached tracks remain visible; a later manual scan can retry.
+            self.statusBar().showMessage(
+                f"Не удалось проверить медиатеку: {message}",
+                12000,
+            )
+        else:
+            QMessageBox.critical(self, "Ошибка сканирования", message)
 
     def _cover_repair_finished(self, repaired: int) -> None:
         self._cover_repair_task = None
