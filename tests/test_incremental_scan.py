@@ -121,6 +121,13 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(self.get_tracks(), before)
 
 
+    def test_unset_music_folder_is_not_treated_as_current_directory(self):
+        self.assertIsNone(main.configured_music_folder({}))
+        self.assertIsNone(main.configured_music_folder({"music_folder": ""}))
+        self.assertIsNone(main.configured_music_folder({"music_folder": "   "}))
+        configured = main.configured_music_folder({"music_folder": str(self.music)})
+        self.assertEqual(configured, self.music)
+
     def test_cover_memory_cache_uses_byte_budget_and_lru(self):
         cache = main.CoverMemoryCache(max_bytes=1024)
         image_a = main.QImage(10, 10, main.QImage.Format.Format_RGBA8888)
