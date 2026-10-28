@@ -35,6 +35,7 @@ import hashlib
 import json
 import math
 import os
+import queue
 import random
 import shutil
 import sqlite3
@@ -629,6 +630,120 @@ def update_listening_session(
         conn.commit()
     finally:
         conn.close()
+
+
+class ListeningSessionWriterSignals(QObject):
+    started = pyqtSignal(int, object, str)
+    error = pyqtSignal(int, str)
+
+
+class ListeningSessionWriter:
+    """Serialize listening-history writes outside the GUI thread.
+
+    The background scanner may hold SQLite's single writer lock while indexing
+    changed media. Playback must not wait for that lock on the Qt event thread.
+    Commands are ordered so start/update/finish operations for a session cannot
+    race each other.
+    """
+
+    def __init__(self):
+        self.signals = ListeningSessionWriterSignals()
+        self._commands = queue.Queue()
+        self._pending = 0
+        self._pending_condition = threading.Condition()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="ListeningSessionWriter",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def _enqueue(self, command) -> None:
+        with self._pending_condition:
+            self._pending += 1
+        self._commands.put(command)
+
+    def start_session(self, generation: int, track: dict) -> None:
+        self._enqueue(("start", int(generation), dict(track)))
+
+    def update_session(self, generation: int, listened_ms: int) -> None:
+        self._enqueue(("update", int(generation), max(0, int(listened_ms))))
+
+    def finish_session(
+        self, generation: int, listened_ms: int, *, completed: bool = False
+    ) -> None:
+        self._enqueue(
+            ("finish", int(generation), max(0, int(listened_ms)), bool(completed))
+        )
+
+    def wait_for_idle(self, timeout: float = 0.5) -> bool:
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        with self._pending_condition:
+            while self._pending:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._pending_condition.wait(remaining)
+            return True
+
+    def shutdown(self) -> None:
+        self._commands.put(None)
+
+    @staticmethod
+    def _with_locked_retry(operation):
+        for attempt in range(3):
+            try:
+                return operation()
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).casefold() or attempt == 2:
+                    raise
+                time.sleep(0.25 * (attempt + 1))
+
+    def _run(self) -> None:
+        sessions: dict[int, Optional[int]] = {}
+        while True:
+            command = self._commands.get()
+            if command is None:
+                self._commands.task_done()
+                return
+
+            kind, generation, *args = command
+            try:
+                if kind == "start":
+                    session_id = self._with_locked_retry(
+                        lambda: start_listening_session(args[0])
+                    )
+                    sessions[generation] = session_id
+                    self.signals.started.emit(generation, session_id, "")
+                elif kind == "update":
+                    session_id = sessions.get(generation)
+                    if session_id:
+                        self._with_locked_retry(
+                            lambda: update_listening_session(session_id, args[0])
+                        )
+                elif kind == "finish":
+                    session_id = sessions.get(generation)
+                    if session_id:
+                        self._with_locked_retry(
+                            lambda: update_listening_session(
+                                session_id,
+                                args[0],
+                                finished=True,
+                                completed=args[1],
+                            )
+                        )
+                    sessions.pop(generation, None)
+            except Exception as exc:
+                if kind == "start":
+                    sessions[generation] = None
+                    self.signals.started.emit(generation, None, str(exc))
+                else:
+                    self.signals.error.emit(generation, f"{kind}: {exc}")
+            finally:
+                with self._pending_condition:
+                    self._pending -= 1
+                    self._pending_condition.notify_all()
+                self._commands.task_done()
 
 
 def fetch_artist_listening_totals() -> dict[str, int]:
@@ -3521,6 +3636,12 @@ class MainWindow(QMainWindow):
         self.repeat_mode = int(self.settings.get("repeat_mode", 0) or 0)
         self.track_duration = 0
         self._listening_session_id: Optional[int] = None
+        self._listening_generation = 0
+        self._listening_active = False
+        self._session_error_generation: Optional[int] = None
+        self._session_writer = ListeningSessionWriter()
+        self._session_writer.signals.started.connect(self._on_listening_session_started)
+        self._session_writer.signals.error.connect(self._on_listening_session_error)
         self._listening_session_ms = 0
         self._listening_base_ms = 0
         self._listening_last_sample: Optional[float] = None
@@ -4127,11 +4248,7 @@ class MainWindow(QMainWindow):
         self.home.set_now_playing(track, playing=True)
         self.album_page.track_list.set_playing_path(path)
         self.library.set_playing(path)
-        self._listening_session_id = start_listening_session(track)
-        self._listening_session_ms = 0
-        self._listening_base_ms = int(track.get("listened_ms") or 0)
-        self._listening_last_sample = None
-        self._listening_last_flush_ms = 0
+        self._begin_listening_session(track)
 
         self.settings["last_track_rel"] = track.get("relative_path", "")
         self.settings["shuffle"] = self.shuffle_enabled
@@ -4180,12 +4297,8 @@ class MainWindow(QMainWindow):
             self.player.play()
             self.player_bar.set_playing(True)
             self.home.now.set_playing(True)
-            if self._listening_session_id is None and self.current_track:
-                self._listening_session_id = start_listening_session(self.current_track)
-                self._listening_session_ms = 0
-                self._listening_base_ms = int(self.current_track.get("listened_ms") or 0)
-                self._listening_last_sample = None
-                self._listening_last_flush_ms = 0
+            if not self._listening_active and self.current_track:
+                self._begin_listening_session(self.current_track)
             return
 
         if self.shuffle_enabled and len(self.queue) > 1:
@@ -4258,23 +4371,51 @@ class MainWindow(QMainWindow):
             self.history_pos = 0
             self._start_current()
 
-    def _finish_listening_session(self, completed: bool = False) -> None:
-        if self._listening_session_id is None:
+    def _begin_listening_session(self, track: dict) -> None:
+        self._listening_generation += 1
+        self._listening_session_id = None
+        self._listening_active = True
+        self._session_error_generation = None
+        self._listening_session_ms = 0
+        self._listening_base_ms = int(track.get("listened_ms") or 0)
+        self._listening_last_sample = None
+        self._listening_last_flush_ms = 0
+        self._session_writer.start_session(self._listening_generation, track)
+
+    def _on_listening_session_started(
+        self, generation: int, session_id, error: str
+    ) -> None:
+        if generation != self._listening_generation or not self._listening_active:
             return
-        session_id = self._listening_session_id
+        self._listening_session_id = int(session_id) if session_id else None
+        if error and self._session_error_generation != generation:
+            self._session_error_generation = generation
+            self.statusBar().showMessage(
+                f"Историю прослушивания не удалось сохранить: {error}", 7000
+            )
+
+    def _on_listening_session_error(self, generation: int, message: str) -> None:
+        if generation != self._listening_generation or not self._listening_active:
+            return
+        if self._session_error_generation == generation:
+            return
+        self._session_error_generation = generation
+        self.statusBar().showMessage(
+            f"История прослушивания временно задержана: {message}", 7000
+        )
+
+    def _finish_listening_session(self, completed: bool = False) -> None:
+        if not self._listening_active:
+            return
+        generation = self._listening_generation
         total_ms = max(0, int(self._listening_session_ms))
         track_path = self.current_path
         track_total_ms = self._listening_base_ms + total_ms
-        try:
-            update_listening_session(
-                session_id,
-                total_ms,
-                finished=True,
-                completed=completed,
-            )
-        except Exception as exc:
-            self.statusBar().showMessage(f"Не удалось сохранить историю: {exc}", 5000)
+        self._session_writer.finish_session(
+            generation, total_ms, completed=completed
+        )
         self._listening_session_id = None
+        self._listening_active = False
         self._listening_last_sample = None
         if self.current_track and self.current_track.get("file_path") == track_path:
             self.current_track["listened_ms"] = track_total_ms
@@ -4351,7 +4492,7 @@ class MainWindow(QMainWindow):
             is_playing = state == vlc.State.Playing
             self.player_bar.set_playing(is_playing)
 
-            if self._listening_session_id is not None and is_playing:
+            if self._listening_active and is_playing:
                 now = time.monotonic()
                 if self._listening_last_sample is not None:
                     elapsed_ms = int((now - self._listening_last_sample) * 1000)
@@ -4360,9 +4501,9 @@ class MainWindow(QMainWindow):
                         self._listening_session_ms += elapsed_ms
                 self._listening_last_sample = now
                 if self._listening_session_ms - self._listening_last_flush_ms >= 5000:
-                    update_listening_session(
-                        self._listening_session_id,
-                        self._listening_session_ms,
+                    # Never let periodic history writes wait on SQLite from the GUI.
+                    self._session_writer.update_session(
+                        self._listening_generation, self._listening_session_ms
                     )
                     self._listening_last_flush_ms = self._listening_session_ms
                     total_listened = self._listening_base_ms + self._listening_session_ms
@@ -4465,6 +4606,8 @@ class MainWindow(QMainWindow):
             save_settings(self.settings)
             self.playback_timer.stop()
             self._finish_listening_session(completed=False)
+            self._session_writer.wait_for_idle(timeout=0.35)
+            self._session_writer.shutdown()
             if self.player is not None:
                 self.player.stop()
             if self.vlc_instance is not None:
