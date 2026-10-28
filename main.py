@@ -204,46 +204,52 @@ def _create_runtime_icon() -> Path:
 
 
 def create_desktop_shortcut_async() -> None:
-    if os.name != "nt":
+    """Refresh the matching shortcut for a packaged build, never for source runs.
+
+    Development builds use a separate preview shortcut so running main.py or
+    testing a preview EXE cannot replace the user's stable desktop launcher.
+    The build script is the only component that creates a shortcut for a source
+    checkout.
+    """
+    if os.name != "nt" or not getattr(sys, "frozen", False):
         return
 
     def worker() -> None:
         try:
+            executable = Path(sys.executable).resolve()
+            is_preview = (
+                "preview" in executable.stem.casefold()
+                or "preview" in executable.parent.name.casefold()
+            )
+            shortcut_name = "Local Music Preview.lnk" if is_preview else "Local Music.lnk"
             desktop = _desktop_path()
             desktop.mkdir(parents=True, exist_ok=True)
-            shortcut = desktop / "Local Music.lnk"
+            shortcut = desktop / shortcut_name
             icon = _create_runtime_icon()
-            if getattr(sys, "frozen", False):
-                executable = Path(sys.executable).resolve()
-            else:
-                # A source run is for development only. Never create a desktop
-                # shortcut that launches python.exe/pythonw.exe; use a packaged
-                # executable if one exists, otherwise leave shortcut creation to
-                # build_local_music.bat.
-                project_dir = Path(__file__).resolve().parent
-                candidates = (
-                    project_dir / "YandexMusicLocal.exe",
-                    project_dir / "dist" / "YandexMusicLocal" / "YandexMusicLocal.exe",
-                    project_dir / "release" / "YandexMusicLocal.exe",
-                )
-                executable = next((item.resolve() for item in candidates if item.is_file()), None)
-                if executable is None:
-                    return
 
             target = str(executable)
-            arguments = ""
             working_dir = str(executable.parent)
             icon_location = str(icon) if icon else target
+            description = (
+                "Локальный музыкальный плеер Local Music — тестовая сборка"
+                if is_preview
+                else "Локальный музыкальный плеер Local Music"
+            )
 
             ps = f"""
-$ws = New-Object -ComObject WScript.Shell
-$sc = $ws.CreateShortcut({json.dumps(str(shortcut))})
-$sc.TargetPath = {json.dumps(target)}
-$sc.Arguments = {json.dumps(arguments)}
-$sc.WorkingDirectory = {json.dumps(working_dir)}
-$sc.IconLocation = {json.dumps(icon_location)}
-$sc.Description = {json.dumps('Локальный музыкальный плеер Local Music')}
-$sc.Save()
+$ErrorActionPreference = 'Stop'
+try {{
+    $ws = New-Object -ComObject WScript.Shell
+    $sc = $ws.CreateShortcut({json.dumps(str(shortcut))})
+    $sc.TargetPath = {json.dumps(target)}
+    $sc.Arguments = ''
+    $sc.WorkingDirectory = {json.dumps(working_dir)}
+    $sc.IconLocation = {json.dumps(icon_location)}
+    $sc.Description = {json.dumps(description)}
+    $sc.Save()
+}} catch {{
+    exit 1
+}}
 """
             subprocess.run(
                 [
