@@ -446,5 +446,48 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(cover_path, str(fallback))
 
 
+
+    def test_folder_cover_lookup_finds_nonstandard_image_filename(self):
+        track = self.make_track(self.music, "track-with-art.mp3")
+        artwork = track.parent / "Artist Album Cover.jpeg"
+        main.Image.new("RGB", (40, 40), (200, 145, 20)).save(artwork, format="JPEG")
+
+        found = main.find_folder_cover_path(track.parent)
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found.resolve(), artwork.resolve())
+
+    def test_track_cover_resolver_ignores_legacy_negative_cache(self):
+        track = self.make_track(self.music, "legacy-no-art.mp3")
+        stat = track.stat()
+        old_identity = (
+            f"{__import__('os').path.normcase(str(track.resolve()))}|"
+            f"{stat.st_size}|{stat.st_mtime_ns}|"
+        )
+        old_key = main.hashlib.sha1(
+            old_identity.encode("utf-8", "surrogatepass")
+        ).hexdigest()
+        track_cache = main.COVER_CACHE_DIR / "track-art"
+        track_cache.mkdir(parents=True, exist_ok=True)
+        (track_cache / f"{old_key}.none").write_text(
+            "old negative cache entry", encoding="ascii"
+        )
+
+        image_buffer = BytesIO()
+        main.Image.new("RGB", (40, 40), (210, 90, 35)).save(
+            image_buffer, format="JPEG"
+        )
+        artwork = image_buffer.getvalue()
+
+        with mock.patch.object(
+            main, "extract_embedded_cover", return_value=artwork
+        ) as extract:
+            cover_path = main.resolve_track_cover_path(str(track))
+
+        self.assertIsNotNone(cover_path)
+        self.assertTrue(Path(cover_path).is_file())
+        self.assertGreater(Path(cover_path).stat().st_size, 100)
+        extract.assert_called_once_with(str(track.resolve()))
+
 if __name__ == "__main__":
     unittest.main()
