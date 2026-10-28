@@ -138,7 +138,8 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(error, "")
         self.assertEqual(len(albums), 1)
         self.assertEqual(albums[0]["album"], "Test Album")
-        self.assertEqual(albums[0]["artist"], "Test Artist")
+        # The fake MP3 has no ID3 tags, so the scanner uses the folder fallback.
+        self.assertEqual(albums[0]["artist"], "Разные исполнители")
 
     def test_unset_music_folder_is_not_treated_as_current_directory(self):
         self.assertIsNone(main.configured_music_folder({}))
