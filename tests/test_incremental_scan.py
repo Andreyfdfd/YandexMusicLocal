@@ -425,8 +425,10 @@ class IncrementalScannerTests(unittest.TestCase):
             main, "extract_embedded_cover", return_value=None
         ) as extract:
             cover_path = main.resolve_track_cover_path(str(track))
+            cover_path_again = main.resolve_track_cover_path(str(track))
 
         self.assertEqual(Path(cover_path).resolve(), sidecar.resolve())
+        self.assertEqual(cover_path_again, cover_path)
         extract.assert_called_once_with(str(track.resolve()))
 
     def test_track_cover_resolver_falls_back_to_album_cover(self):
