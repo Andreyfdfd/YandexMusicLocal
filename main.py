@@ -1642,7 +1642,7 @@ def fetch_albums(sort_mode: str = "Количество треков", reverse: 
         "Исполнитель": "a.artist COLLATE NOCASE, a.album_name COLLATE NOCASE",
         "Название": "a.album_name COLLATE NOCASE, a.artist COLLATE NOCASE",
         "Год": "a.year IS NULL, a.year, a.album_name COLLATE NOCASE",
-        "Количество треков": "track_count, a.album_name COLLATE NOCASE",
+        "Количество треков": "COUNT(t.id), a.album_name COLLATE NOCASE",
     }
     direction = "DESC" if reverse else "ASC"
     order = order_map.get(sort_mode, order_map["Исполнитель"])
