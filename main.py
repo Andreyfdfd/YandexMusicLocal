@@ -1533,18 +1533,29 @@ class ElidedLabel(QLabel):
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._apply_color()
         self._refresh()
 
     def setText(self, text: str) -> None:
-        self._full_text = text or ""
+        text = text or ""
+        if text == self._full_text:
+            return
+        self._full_text = text
         self._refresh()
 
     def full_text(self) -> str:
         return self._full_text
 
     def set_color(self, color: str) -> None:
-        self._color = color
+        if color != self._color:
+            self._color = color
+            self._apply_color()
         self._refresh()
+
+    def _apply_color(self) -> None:
+        # Repolishing a stylesheet on every resize can trigger costly style
+        # invalidations during hover/layout changes. Update it only on color changes.
+        self.setStyleSheet(f"color: {self._color};")
 
     def setFont(self, font: QFont) -> None:
         super().setFont(font)
@@ -1561,9 +1572,11 @@ class ElidedLabel(QLabel):
             Qt.TextElideMode.ElideRight,
             max(0, self.width()),
         )
-        super().setText(text)
-        self.setStyleSheet(f"color: {self._color};")
-        self.setToolTip(self._full_text if text != self._full_text else "")
+        if self.text() != text:
+            super().setText(text)
+        tooltip = self._full_text if text != self._full_text else ""
+        if self.toolTip() != tooltip:
+            self.setToolTip(tooltip)
 
 
 class IconButton(QToolButton):
