@@ -1560,7 +1560,7 @@ def fetch_all_tracks(
             sql += " WHERE t.genre = ?"
             args.append(genre)
         if sort_mode == "Время прослушивания":
-            sql += f" ORDER BY {order.split(',')[0]} {direction}, t.track_name COLLATE NOCASE ASC"
+            sql += f" ORDER BY {order.split(", t.track_name COLLATE NOCASE")[0]} {direction}, t.track_name COLLATE NOCASE ASC"
         else:
             sql += f" ORDER BY {order} {direction}"
         rows = conn.execute(sql, args).fetchall()
@@ -1611,7 +1611,7 @@ def search_tracks(
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
         if sort_mode == "Время прослушивания":
-            sql += f" ORDER BY {order.split(',')[0]} {direction}, t.track_name COLLATE NOCASE ASC"
+            sql += f" ORDER BY {order.split(", t.track_name COLLATE NOCASE")[0]} {direction}, t.track_name COLLATE NOCASE ASC"
         else:
             sql += f" ORDER BY {order} {direction}"
         rows = conn.execute(sql, args).fetchall()
