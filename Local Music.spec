@@ -1,12 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_submodules
+
+mutagen_hiddenimports = collect_submodules('mutagen')
 
 a = Analysis(
-    ['interface_universal_fast_final.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['vlc'] + mutagen_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -21,7 +24,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Local Music',
+    name='YandexMusicLocal',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -41,5 +44,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='Local Music',
+    name='YandexMusicLocal',
 )
