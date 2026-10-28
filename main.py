@@ -390,6 +390,8 @@ from PyQt6.QtWidgets import (
     QSpacerItem,
     QStyle,
     QStyleOptionSlider,
+    QStyleOptionComboBox,
+    QStylePainter,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -1030,7 +1032,7 @@ def save_cover_bytes(data: Optional[bytes]) -> Optional[str]:
 
 
 def find_folder_cover_path(folder: Path) -> Optional[Path]:
-    """Return a nearby image file, if a local sidecar cover exists."""
+    """Find local artwork using conventional names first, then any image in the album folder."""
     for filename in COVER_FILENAMES:
         candidate = folder / filename
         try:
@@ -1038,7 +1040,35 @@ def find_folder_cover_path(folder: Path) -> Optional[Path]:
                 return candidate
         except OSError:
             continue
-    return None
+
+    image_extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+    preferred_stems = {
+        "cover", "folder", "front", "album", "albumart", "coverart",
+        "artwork", "art", "poster", "folderart",
+    }
+    try:
+        candidates = [
+            path for path in folder.iterdir()
+            if path.is_file()
+            and path.suffix.casefold() in image_extensions
+            and path.stat().st_size > 100
+        ]
+    except (OSError, RuntimeError):
+        return None
+
+    def priority(path: Path) -> tuple[int, str]:
+        stem = path.stem.casefold().strip()
+        if stem in preferred_stems:
+            rank = 0
+        elif any(stem.startswith(prefix) for prefix in ("cover", "front", "album", "artwork")):
+            rank = 1
+        elif stem == folder.name.casefold().strip():
+            rank = 2
+        else:
+            rank = 3
+        return rank, path.name.casefold()
+
+    return min(candidates, key=priority) if candidates else None
 
 
 def find_folder_cover_bytes(folder: Path) -> Optional[bytes]:
@@ -1158,8 +1188,8 @@ def resolve_track_cover_path(
             sidecar = None
 
     identity = (
-        f"{os.path.normcase(str(source))}|{source_stat.st_size}|"
-        f"{source_stat.st_mtime_ns}|{sidecar_fingerprint}"
+        f"cover-resolver-v2|{os.path.normcase(str(source))}|"
+        f"{source_stat.st_size}|{source_stat.st_mtime_ns}|{sidecar_fingerprint}"
     )
     cache_key = hashlib.sha1(identity.encode("utf-8", "surrogatepass")).hexdigest()
     track_cache = COVER_CACHE_DIR / "track-art"
@@ -1332,6 +1362,28 @@ def rounded_pixmap(image: Optional[QImage], size: int, radius: int = 14) -> QPix
 
 class WorkerSignals(QObject):
     ready = pyqtSignal(object)
+    finished = pyqtSignal(int)
+
+
+class CoverTaskRegistry(QObject):
+    """Retain QRunnable instances and their signals until Qt delivers results."""
+
+    def __init__(self):
+        super().__init__()
+        self._tasks: dict[int, QRunnable] = {}
+
+    def start(self, task: QRunnable) -> None:
+        task.setAutoDelete(False)
+        task_id = id(task)
+        self._tasks[task_id] = task
+        task.signals.finished.connect(self._release)
+        QThreadPool.globalInstance().start(task)
+
+    def _release(self, task_id: int) -> None:
+        self._tasks.pop(int(task_id), None)
+
+
+COVER_TASK_REGISTRY = CoverTaskRegistry()
 
 
 class CoverTask(QRunnable):
@@ -1344,11 +1396,16 @@ class CoverTask(QRunnable):
         self.setAutoDelete(True)
 
     def run(self):
-        image = load_qimage_from_cover(self.path, self.size)
         try:
+            image = load_qimage_from_cover(self.path, self.size)
             self.signals.ready.emit((self.token, image))
-        except RuntimeError:
-            pass
+        except Exception:
+            try:
+                self.signals.ready.emit((self.token, None))
+            except RuntimeError:
+                pass
+        finally:
+            self.signals.finished.emit(id(self))
 
 
 class TrackCoverTask(QRunnable):
@@ -1370,12 +1427,17 @@ class TrackCoverTask(QRunnable):
         self.setAutoDelete(True)
 
     def run(self) -> None:
-        cover_path = resolve_track_cover_path(self.audio_path, self.fallback_path)
-        image = load_qimage_from_cover(cover_path, self.size) if cover_path else None
         try:
+            cover_path = resolve_track_cover_path(self.audio_path, self.fallback_path)
+            image = load_qimage_from_cover(cover_path, self.size) if cover_path else None
             self.signals.ready.emit((self.token, image))
-        except RuntimeError:
-            pass
+        except Exception:
+            try:
+                self.signals.ready.emit((self.token, None))
+            except RuntimeError:
+                pass
+        finally:
+            self.signals.finished.emit(id(self))
 
 
 class AsyncCover(QLabel):
@@ -1397,7 +1459,7 @@ class AsyncCover(QLabel):
             return
         task = CoverTask(path, self.size_px, self.token)
         task.signals.ready.connect(self._on_ready)
-        self.pool.start(task)
+        COVER_TASK_REGISTRY.start(task)
 
     def load_track(self, audio_path: str, fallback_path: Optional[str] = None) -> None:
         """Load embedded per-track artwork asynchronously, with local fallbacks."""
@@ -1405,7 +1467,7 @@ class AsyncCover(QLabel):
         self.setPixmap(make_placeholder(self.size_px, self.radius))
         task = TrackCoverTask(audio_path, fallback_path, self.size_px, self.token)
         task.signals.ready.connect(self._on_ready)
-        self.pool.start(task)
+        COVER_TASK_REGISTRY.start(task)
 
     def reset(self) -> None:
         self.token += 1
@@ -2061,7 +2123,11 @@ def fetch_albums(sort_mode: str = "Количество треков", reverse: 
                     SELECT COALESCE(SUM(ls.listened_ms), 0)
                     FROM listening_sessions ls
                     WHERE ls.artist=a.artist AND ls.album=a.album_name
-                ) AS listened_ms
+                ) AS listened_ms,
+                (
+                    SELECT t2.file_path FROM tracks t2
+                    WHERE t2.album_id=a.id ORDER BY t2.id LIMIT 1
+                ) AS sample_track_path
             FROM albums a
             LEFT JOIN tracks t ON t.album_id=a.id
             GROUP BY a.id
@@ -2088,6 +2154,7 @@ def fetch_albums(sort_mode: str = "Количество треков", reverse: 
             "cover_path": row[4] or "",
             "track_count": int(row[5] or 0),
             "listened_ms": int(row[6] or 0),
+            "sample_track_path": row[7] or "",
         }
         for row in rows
     ]
@@ -2657,6 +2724,7 @@ class AlbumCard(QFrame):
         root.addWidget(self.subtitle)
 
         self.cover_path = album.get("cover_path") or ""
+        self.sample_track_path = str(album.get("sample_track_path") or "")
         self.cover_requested = False
 
     def ensure_cover(self) -> None:
@@ -2664,7 +2732,10 @@ class AlbumCard(QFrame):
             return
         self.cover_requested = True
         path = self.cover_path if Path(self.cover_path).is_file() else ""
-        self.cover.load(path)
+        if self.sample_track_path and Path(self.sample_track_path).is_file():
+            self.cover.load_track(self.sample_track_path, path)
+        else:
+            self.cover.load(path)
 
     def set_play_visible(self, visible: bool) -> None:
         self.play_button.setVisible(bool(visible))
@@ -3149,7 +3220,12 @@ class AlbumPage(QWidget):
             f"{info.get('year') or 'Год не указан'}  •  {len(self.tracks)} треков{played_hint}"
         )
         cover = info.get("cover_path") or (self.tracks[0].get("cover_path") if self.tracks else "")
-        self.cover.load(cover if Path(cover).is_file() else "")
+        fallback = cover if Path(cover).is_file() else ""
+        if self.tracks:
+            audio_path = resolve_track_path(self.tracks[0], self.music_folder)
+            self.cover.load_track(audio_path, fallback)
+        else:
+            self.cover.load(fallback)
         self.track_list.set_tracks(self.tracks)
         QTimer.singleShot(0, lambda: self.track_list.load_visible_covers(0, self.scroll.viewport().height()))
 
@@ -3581,6 +3657,28 @@ class SeekSlider(QSlider):
         super().mouseReleaseEvent(event)
 
 
+class QueueComboBox(QComboBox):
+    """Dropdown lists tracks; its closed face shows a stable queue summary."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._summary_text = "Очередь"
+
+    def set_summary_text(self, text: str) -> None:
+        text = str(text or "Очередь")
+        if text != self._summary_text:
+            self._summary_text = text
+            self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        option.currentText = self._summary_text
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
+
+
 class PlayerBar(QFrame):
     play_pause = pyqtSignal()
     previous = pyqtSignal()
@@ -3694,9 +3792,10 @@ class PlayerBar(QFrame):
         self.volume_slider.valueChanged.connect(self._volume_changed)
         right.addWidget(self.volume_slider)
 
-        self.queue = QComboBox()
+        self.queue = QueueComboBox()
         self.queue.setObjectName("QueueCombo")
-        self.queue.setMinimumWidth(228)
+        self.queue.setMinimumWidth(188)
+        self.queue.setToolTip("Открыть очередь воспроизведения")
         self.queue.currentIndexChanged.connect(self._queue_changed)
         right.addWidget(self.queue)
         root.addLayout(right)
@@ -3769,6 +3868,7 @@ class PlayerBar(QFrame):
             self.queue.addItem(text)
         if 0 <= current_index < self.queue.count():
             self.queue.setCurrentIndex(current_index)
+        self.queue.set_summary_text(f"Очередь · {len(queue)}" if queue else "Очередь")
         self._queue_block = False
 
 
