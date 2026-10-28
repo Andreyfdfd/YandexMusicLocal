@@ -3367,7 +3367,8 @@ class MainWindow(QMainWindow):
 
         self.sidebar = Sidebar()
         self.sidebar.home_clicked.connect(self.show_home)
-        self.sidebar.collection_clicked.connect(self.show_library)
+        self.sidebar.collection_clicked.connect(self.show_albums)
+        self.sidebar.history_clicked.connect(self.show_history)
         self.sidebar.search_clicked.connect(self.show_search)
         self.sidebar.folder_clicked.connect(self.choose_music_folder)
         root.addWidget(self.sidebar)
@@ -3394,7 +3395,7 @@ class MainWindow(QMainWindow):
         self.home.sort_changed.connect(self.home_sort_changed)
 
         self.album_page = AlbumPage(self.music_folder)
-        self.album_page.back.connect(self.show_home)
+        self.album_page.back.connect(self.show_albums)
         self.album_page.play_from.connect(self.play_album_index)
 
         self.library = LibraryPage(self.music_folder)
@@ -3403,9 +3404,11 @@ class MainWindow(QMainWindow):
         self.library.shuffle_all.connect(self.shuffle_library)
         self.library.favorite_changed.connect(self.on_favorite_changed)
 
+        self.history_page = ListeningHistoryPage()
+        self.stack.addWidget(self.library)
         self.stack.addWidget(self.home)
         self.stack.addWidget(self.album_page)
-        self.stack.addWidget(self.library)
+        self.stack.addWidget(self.history_page)
         content_layout.addWidget(self.stack, 1)
 
         self.player_bar = PlayerBar()
@@ -3512,7 +3515,9 @@ class MainWindow(QMainWindow):
         )
 
         if count > 0 and same_root_hint:
-            self.home.load_albums("Исполнитель", False)
+            self.home.load_albums("Количество треков", True)
+            self.library.refresh("")
+            self._select_first_track()
             self.statusBar().showMessage("Библиотека загружена; проверяем изменения…")
             self.start_scan(silent=True)
         else:
@@ -3612,15 +3617,19 @@ class MainWindow(QMainWindow):
             mode, reverse = self.home.sort.current()
             self.home.load_albums(mode, reverse)
         else:
-            # Avoid constructing a potentially huge track list while it is hidden.
+            # Avoid constructing a potentially huge album grid while it is hidden.
             self.home._loaded_once = False
 
-        if current_page is self.library:
-            self.library.refresh(self.search_header.edit.text().strip())
-            self.library.set_playing(self.current_path)
-        elif current_page is self.album_page and self.album_page.album_id is not None:
+        query = self.search_header.edit.text().strip() if self.sidebar.btn_search.isChecked() else ""
+        self.library.refresh(query)
+        self.library.set_playing(self.current_path)
+        if current_page is self.album_page and self.album_page.album_id is not None:
             self.album_page.load(self.album_page.album_id)
             self.album_page.track_list.set_playing_path(self.current_path)
+        if current_page is self.history_page:
+            self.history_page.refresh()
+        if not self.current_track or not self.current_path or not Path(self.current_path).is_file():
+            self._select_first_track()
 
         self._cover_repair_task = self._make_cover_repair_task()
         QThreadPool.globalInstance().start(self._cover_repair_task)
@@ -3659,15 +3668,29 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- navigation
     def show_home(self) -> None:
-        self.stack.setCurrentWidget(self.home)
+        self.stack.setCurrentWidget(self.library)
         self.sidebar.set_active(self.sidebar.btn_home)
+        self.search_header.edit.clear()
+        self.library.refresh("")
+        self.library.set_playing(self.current_path)
         self.home.set_now_playing(self.current_track)
 
     def show_library(self) -> None:
-        self.stack.setCurrentWidget(self.library)
+        # Backwards-compatible alias for the primary tracks page.
+        self.show_home()
+
+    def show_albums(self) -> None:
+        self.stack.setCurrentWidget(self.home)
         self.sidebar.set_active(self.sidebar.btn_collection)
-        self.library.refresh(self.search_header.edit.text().strip())
-        self.library.set_playing(self.current_path)
+        self.home.set_now_playing(self.current_track)
+        if not self.home._loaded_once:
+            mode, reverse = self.home.sort.current()
+            self.home.load_albums(mode, reverse)
+
+    def show_history(self) -> None:
+        self.stack.setCurrentWidget(self.history_page)
+        self.sidebar.set_active(self.sidebar.btn_history)
+        self.history_page.refresh()
 
     def show_search(self) -> None:
         self.stack.setCurrentWidget(self.library)
