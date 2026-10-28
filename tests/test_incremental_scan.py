@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
@@ -392,6 +393,56 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertEqual(artist_tracks[1]["sessions"], 2)
         self.assertEqual(artist_tracks[1]["listened_ms"], 1_200_000)
         self.assertEqual(artist_tracks[1]["last_played"], 300.0)
+
+    def test_track_cover_resolver_extracts_and_caches_embedded_art(self):
+        track = self.make_track(self.music, "embedded-cover.mp3")
+        image_buffer = BytesIO()
+        main.Image.new("RGB", (40, 40), (230, 180, 20)).save(
+            image_buffer, format="JPEG"
+        )
+        artwork = image_buffer.getvalue()
+
+        with mock.patch.object(
+            main, "extract_embedded_cover", return_value=artwork
+        ) as extract:
+            first = main.resolve_track_cover_path(str(track))
+            second = main.resolve_track_cover_path(str(track))
+
+        self.assertIsNotNone(first)
+        self.assertEqual(first, second)
+        self.assertTrue(Path(first).is_file())
+        self.assertGreater(Path(first).stat().st_size, 100)
+        extract.assert_called_once_with(str(track.resolve()))
+
+    def test_track_cover_resolver_uses_nearby_cover_when_no_embedded_art(self):
+        track = self.make_track(self.music, "sidecar-cover.mp3")
+        sidecar = track.parent / "cover.jpg"
+        main.Image.new("RGB", (40, 40), (25, 80, 200)).save(
+            sidecar, format="JPEG"
+        )
+
+        with mock.patch.object(
+            main, "extract_embedded_cover", return_value=None
+        ) as extract:
+            cover_path = main.resolve_track_cover_path(str(track))
+
+        self.assertEqual(Path(cover_path), sidecar)
+        extract.assert_called_once_with(str(track.resolve()))
+
+    def test_track_cover_resolver_falls_back_to_album_cover(self):
+        track = self.make_track(self.music, "no-cover.mp3")
+        fallback = self.root / "album-cover.jpg"
+        main.Image.new("RGB", (40, 40), (30, 180, 70)).save(
+            fallback, format="JPEG"
+        )
+
+        with mock.patch.object(
+            main, "extract_embedded_cover", return_value=None
+        ):
+            cover_path = main.resolve_track_cover_path(str(track), str(fallback))
+
+        self.assertEqual(cover_path, str(fallback))
+
 
 if __name__ == "__main__":
     unittest.main()
