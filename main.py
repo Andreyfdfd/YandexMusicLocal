@@ -2968,9 +2968,11 @@ class MainWindow(QMainWindow):
         try:
             conn = db_connect()
             try:
-                count = int(conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0])
+                # The presence check must be O(1); COUNT(*) would scan the whole
+                # tracks table on the UI thread and delay startup on large libraries.
                 row = conn.execute("SELECT file_path FROM tracks ORDER BY id LIMIT 1").fetchone()
                 if row:
+                    count = 1
                     first_track_path = str(row[0] or "")
             finally:
                 conn.close()
