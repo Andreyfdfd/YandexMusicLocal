@@ -380,13 +380,6 @@ CREATE TABLE IF NOT EXISTS tracks (
     FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_tracks_name ON tracks(track_name);
-CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre);
-CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_id);
-CREATE INDEX IF NOT EXISTS idx_tracks_duration ON tracks(duration_ms);
-CREATE INDEX IF NOT EXISTS idx_tracks_relative_path ON tracks(relative_path);
-CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist);
-CREATE INDEX IF NOT EXISTS idx_albums_name ON albums(album_name);
 """
 
 
@@ -428,10 +421,15 @@ def ensure_database_schema() -> None:
             if column not in album_cols:
                 conn.execute(f"ALTER TABLE albums ADD COLUMN {column} {definition}")
 
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_relative_path ON tracks(relative_path)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_duration ON tracks(duration_ms)")
+        # Indexes must be created only after ALTER TABLE has added newer columns.
+        # The previous ordering failed on databases created by older player builds.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_name ON tracks(track_name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_duration ON tracks(duration_ms)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_relative_path ON tracks(relative_path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_albums_name ON albums(album_name)")
         conn.commit()
     finally:
         conn.close()
