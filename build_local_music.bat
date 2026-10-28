@@ -58,7 +58,7 @@ set "OUT=%CD%\dist\YandexMusicLocal"
 if not exist "%OUT%\YandexMusicLocal.exe" goto EXE_MISSING
 
 echo.
-echo [4/4] Проверка и копирование VLC...
+echo [4/5] Проверка и копирование VLC...
 set "VLC_DIR="
 if exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" set "VLC_DIR=%ProgramFiles%\VideoLAN\VLC"
 if not defined VLC_DIR if exist "%ProgramFiles(x86)%\VideoLAN\VLC\libvlc.dll" set "VLC_DIR=%ProgramFiles(x86)%\VideoLAN\VLC"
@@ -76,13 +76,26 @@ if defined VLC_DIR (
 )
 
 if exist "local_music.ico" copy /Y "local_music.ico" "%OUT%\" >nul
+
+echo.
+echo [5/5] Создание ярлыка для готового приложения...
+set "APP_EXE=%OUT%\YandexMusicLocal.exe"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$desktop = [Environment]::GetFolderPath('Desktop'); $shell = New-Object -ComObject WScript.Shell; $link = Join-Path $desktop 'Local Music.lnk'; $sc = $shell.CreateShortcut($link); $sc.TargetPath = $env:APP_EXE; $sc.Arguments = ''; $sc.WorkingDirectory = Split-Path $env:APP_EXE; $sc.IconLocation = $env:APP_EXE + ',0'; $sc.Description = 'Local Music - локальный музыкальный плеер'; $sc.Save()"
+if errorlevel 1 (
+    echo ВНИМАНИЕ: ярлык не создан автоматически. EXE всё равно собран.
+) else (
+    echo Ярлык Local Music создан на рабочем столе и указывает на EXE.
+)
+
 >"%OUT%\BUILD_INFO.txt" echo YandexMusicLocal
 >>"%OUT%\BUILD_INFO.txt" echo Entry point: main.py
 >>"%OUT%\BUILD_INFO.txt" echo Build method: PyInstaller onedir
+>>"%OUT%\BUILD_INFO.txt" echo Launch: YandexMusicLocal.exe
 
 echo.
 echo СБОРКА ЗАВЕРШЕНА
 echo EXE: %OUT%\YandexMusicLocal.exe
+echo Ярлык: %USERPROFILE%\Desktop\Local Music.lnk
 echo.
 pause
 goto END
