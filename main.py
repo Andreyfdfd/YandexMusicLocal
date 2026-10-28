@@ -3736,8 +3736,9 @@ class MainWindow(QMainWindow):
                 padding: 7px 9px;
             }}
             #Sidebar {{
-                background: {BG_DEEP};
-                border-right: 1px solid #1e1e20;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0b0b0d, stop:1 #09090b);
+                border-right: 1px solid #202023;
             }}
             #LogoMark {{
                 color: {ACCENT};
@@ -3770,17 +3771,23 @@ class MainWindow(QMainWindow):
             }}
             #SideButton {{
                 background: transparent;
-                border: none;
-                border-radius: 10px;
-                color: #929296;
+                border: 1px solid transparent;
+                border-radius: 11px;
+                color: #96969c;
                 text-align: left;
                 padding: 0 14px;
             }}
-            #SideButton:hover {{ background: #171718; color: white; }}
+            #SideButton:hover {{
+                background: #171719;
+                border-color: #242427;
+                color: white;
+            }}
             #SideButton:checked {{
-                background: #242425;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2b281b, stop:1 #1c1b17);
+                border-color: #3a3520;
                 color: {ACCENT};
-                font-weight: 600;
+                font-weight: 650;
             }}
             #Content {{ background: {BG}; }}
             #SearchIcon {{ color: #77777c; font-size: 22px; }}
@@ -3795,8 +3802,8 @@ class MainWindow(QMainWindow):
             }}
             #SearchField:hover {{ background: #1b1b1c; }}
             #SearchField:focus {{
-                background: #1b1b1c;
-                border-color: #343437;
+                background: #1c1c1f;
+                border-color: #4a4429;
             }}
             #HeaderStatus {{ color: #66666b; font-size: 10px; min-width: 70px; }}
             #PageTitle {{ font-size: 27px; font-weight: 750; color: white; }}
@@ -3816,14 +3823,15 @@ class MainWindow(QMainWindow):
             #HeroMetaSecondary {{ color: #77777c; font-size: 10px; }}
             #NowPlayingHero {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1d1d1e, stop:0.55 #151516, stop:1 #121213);
-                border: 1px solid #2a2a2c;
-                border-radius: 18px;
+                    stop:0 #28251a, stop:0.38 #1c1b18, stop:1 #141416);
+                border: 1px solid #383222;
+                border-radius: 22px;
             }}
             #AlbumHero {{
-                background: #171718;
-                border: 1px solid #252526;
-                border-radius: 18px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #24221b, stop:0.48 #1a1a1c, stop:1 #141416);
+                border: 1px solid #302c20;
+                border-radius: 22px;
             }}
             #AlbumCard {{
                 background: #151517;
@@ -3850,8 +3858,8 @@ class MainWindow(QMainWindow):
                 background: {ACCENT};
                 color: #181818;
                 border: none;
-                border-radius: 11px;
-                padding: 9px 16px;
+                border-radius: 12px;
+                padding: 10px 17px;
                 font-weight: 750;
             }}
             #AccentButton:hover {{ background: {ACCENT_HOVER}; }}
@@ -3891,14 +3899,15 @@ class MainWindow(QMainWindow):
             #IconButton[repeatActive="true"] {{ color: {ACCENT}; }}
             #IconButton[repeatOne="true"] {{ background: #2a2926; color: {ACCENT}; }}
             #PlayButton {{
-                background: white;
+                background: {ACCENT};
                 color: #131313;
+                border: 1px solid #f2d300;
                 border-radius: 25px;
                 font-size: 18px;
                 font-weight: 800;
             }}
-            #PlayButton:hover {{ background: #efeff1; }}
-            #PlayButton:pressed {{ background: #d8d8da; }}
+            #PlayButton:hover {{ background: {ACCENT_HOVER}; }}
+            #PlayButton:pressed {{ background: {ACCENT_PRESSED}; }}
             #FavoriteButton {{ color: #77777c; }}
             #FavoriteButton:hover {{ color: #ff7d8e; background: #231b1d; }}
             #TableHeader {{ color: #646469; font-size: 9px; text-transform: uppercase; letter-spacing: .7px; }}
@@ -3919,8 +3928,9 @@ class MainWindow(QMainWindow):
             #RowYear {{ color: #6e6e73; font-size: 10px; }}
             #RowDuration {{ color: #8b8b90; font-size: 11px; }}
             #PlayerBar {{
-                background: #111112;
-                border-top: 1px solid #242426;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #171719, stop:0.18 #121214, stop:1 #0c0c0e);
+                border-top: 1px solid #2a2a2d;
             }}
             #TinyText {{ color: #808085; font-size: 9px; }}
             #VolumeIcon {{ color: #8a8a90; font-size: 15px; }}
