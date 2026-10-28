@@ -34,10 +34,16 @@ py -3.14 -m venv .venv
 
 Если Python 3.14 не установлен, выполни `py -0p` и выбери установленную поддерживаемую версию вместо `-3.14`.
 
-Для проверки синтаксиса:
+Для локальной проверки синтаксиса и регрессионных тестов:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-project.ps1
+```
+
+Чтобы безопасно получить обновлённую рабочую ветку из GitHub (скрипт остановится, если есть незакоммиченные изменения):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-local.ps1
 ```
 
 Для сборки папки с Windows-приложением после установки зависимостей и обычного VLC запусти `build_local_music.bat`. Для корректной работы автономной сборки BAT пытается скопировать libVLC и плагины VLC рядом с EXE.
