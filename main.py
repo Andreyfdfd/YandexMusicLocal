@@ -1550,7 +1550,7 @@ def fetch_all_tracks(
         "Изменение файла": "t.mtime, t.track_name COLLATE NOCASE",
         "Время прослушивания": "COALESCE((SELECT SUM(ls.listened_ms) FROM listening_sessions ls WHERE ls.track_key=t.file_path), 0), t.track_name COLLATE NOCASE",
     }
-    direction = "DESC" if reverse else "ASC
+    direction = "DESC" if reverse else "ASC"
     order = order_map.get(sort_mode, order_map["Название"])
     conn = db_connect()
     try:
@@ -1560,7 +1560,8 @@ def fetch_all_tracks(
             sql += " WHERE t.genre = ?"
             args.append(genre)
         if sort_mode == "Время прослушивания":
-            sql += f" ORDER BY {order.split(", t.track_name COLLATE NOCASE")[0]} {direction}, t.track_name COLLATE NOCASE ASC"
+            primary_order = order.split(", t.track_name COLLATE NOCASE", 1)[0]
+            sql += f" ORDER BY {primary_order} {direction}, t.track_name COLLATE NOCASE ASC"
         else:
             sql += f" ORDER BY {order} {direction}"
         rows = conn.execute(sql, args).fetchall()
@@ -1585,6 +1586,7 @@ def search_tracks(
         "Длительность": "t.duration_ms, t.track_name COLLATE NOCASE",
         "Размер файла": "t.file_size, t.track_name COLLATE NOCASE",
         "Изменение файла": "t.mtime, t.track_name COLLATE NOCASE",
+        "Время прослушивания": "COALESCE((SELECT SUM(ls.listened_ms) FROM listening_sessions ls WHERE ls.track_key=t.file_path), 0), t.track_name COLLATE NOCASE",
     }
     direction = "DESC" if reverse else "ASC"
     order = order_map.get(sort_mode, order_map["Название"])
@@ -1611,7 +1613,8 @@ def search_tracks(
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
         if sort_mode == "Время прослушивания":
-            sql += f" ORDER BY {order.split(", t.track_name COLLATE NOCASE")[0]} {direction}, t.track_name COLLATE NOCASE ASC"
+            primary_order = order.split(", t.track_name COLLATE NOCASE", 1)[0]
+            sql += f" ORDER BY {primary_order} {direction}, t.track_name COLLATE NOCASE ASC"
         else:
             sql += f" ORDER BY {order} {direction}"
         rows = conn.execute(sql, args).fetchall()
