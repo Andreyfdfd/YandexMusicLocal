@@ -1006,7 +1006,7 @@ def save_cover_bytes(data: Optional[bytes]) -> Optional[str]:
     output = COVER_CACHE_DIR / f"{digest}.jpg"
     if output.exists() and output.stat().st_size > 100:
         return str(output)
-    temp = output.with_suffix(".tmp")
+    temp = output.with_name(f"{output.stem}.{threading.get_ident()}.tmp")
     try:
         from io import BytesIO
 
@@ -1168,52 +1168,37 @@ def resolve_track_cover_path(
     except OSError:
         return str(sidecar) if sidecar else fallback or None
 
-    cached_cover = track_cache / f"{cache_key}.jpg"
+    cached_cover_ref = track_cache / f"{cache_key}.ref"
     no_art_marker = track_cache / f"{cache_key}.none"
     try:
-        if cached_cover.is_file() and cached_cover.stat().st_size > 100:
-            return str(cached_cover)
+        if cached_cover_ref.is_file():
+            cached_path = Path(cached_cover_ref.read_text(encoding="utf-8").strip())
+            if cached_path.is_file() and cached_path.stat().st_size > 100:
+                return str(cached_path)
         if no_art_marker.is_file():
             return str(sidecar) if sidecar else fallback or None
-    except OSError:
+    except (OSError, ValueError):
         pass
 
     artwork = extract_embedded_cover(str(source))
     if artwork:
-        temp = None
-        try:
-            from io import BytesIO
-
-            temp = track_cache / f"{cache_key}.{threading.get_ident()}.tmp"
-            with Image.open(BytesIO(artwork)) as image:
-                image = ImageOps.exif_transpose(image).convert("RGB")
-                image.thumbnail((1400, 1400), Image.Resampling.LANCZOS)
-                image.save(temp, format="JPEG", quality=92, optimize=True)
+        artwork_path = save_cover_bytes(artwork)
+        if artwork_path and Path(artwork_path).is_file():
             try:
-                temp.replace(cached_cover)
+                cached_cover_ref.write_text(artwork_path, encoding="utf-8")
             except OSError:
-                # Parallel requests for the same file may populate this key.
-                if not cached_cover.is_file():
-                    raise
-                try:
-                    temp.unlink()
-                except OSError:
-                    pass
-            if cached_cover.is_file() and cached_cover.stat().st_size > 100:
-                return str(cached_cover)
-        except Exception:
-            if temp is not None:
-                try:
-                    temp.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                pass
+            return artwork_path
 
-    if sidecar is not None:
-        return str(sidecar)
+    # Negative cache avoids repeatedly parsing audio tags for tracks that use a
+    # folder image or don't have their own artwork. The sidecar fingerprint is
+    # part of the key, so replacing/adding a folder image invalidates this entry.
     try:
-        no_art_marker.write_text("no embedded or sidecar cover", encoding="ascii")
+        no_art_marker.write_text("no embedded track art", encoding="ascii")
     except OSError:
         pass
+    if sidecar is not None:
+        return str(sidecar)
     return fallback or None
 
 
