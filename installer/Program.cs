@@ -662,7 +662,7 @@ internal sealed class UninstallForm : Form
             script += "Remove-Item -LiteralPath $PSCommandPath -Force\r\n";
             File.WriteAllText(scriptPath, script, new UTF8Encoding(false));
 
-            Process.Start(new ProcessStartInfo
+            Process cleanupProcess = Process.Start(new ProcessStartInfo
             {
                 FileName = "powershell.exe",
                 Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + scriptPath + "\"",
