@@ -28,8 +28,8 @@ internal static class Program
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
             return SelfTest();
 
-        ApplicationConfiguration.Initialize();
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        ApplicationConfiguration.Initialize();
 
         string executableName = Path.GetFileName(Environment.ProcessPath ?? "");
         if (executableName.Equals("Uninstall.exe", StringComparison.OrdinalIgnoreCase))
@@ -408,7 +408,7 @@ internal sealed class SetupForm : Form
     {
         if (InvokeRequired)
         {
-            BeginInvoke(() => _status.Text = message);
+            BeginInvoke(new Action(() => _status.Text = message));
             return;
         }
         _status.Text = message;
