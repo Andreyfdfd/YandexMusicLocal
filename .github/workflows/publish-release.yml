@@ -99,7 +99,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = "1.0.\${{ github.run_number }}"
+          $version = "1.0.${{ github.run_number }}"
           $app = Join-Path $PWD 'release-staging\YandexMusicLocal'
           @(
               'Local Music'
@@ -128,7 +128,7 @@ jobs:
       - name: Publish self-contained Setup.exe
         shell: pwsh
         run: |
-          $version = "\${{ steps.version.outputs.version }}"
+          $version = "${{ steps.version.outputs.version }}"
           $package = Join-Path $PWD 'release\LocalMusic-Package.zip'
           dotnet publish installer\LocalMusicSetup.csproj --configuration Release --runtime win-x64 --self-contained true "-p:PackageZip=$package" "-p:Version=$version" -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output release\setup-output
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish Setup.exe.' }
@@ -145,9 +145,9 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v\${{ steps.version.outputs.version }}
-          name: Local Music v\${{ steps.version.outputs.version }}
-          target_commitish: \${{ github.sha }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Local Music v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           make_latest: true
           generate_release_notes: true
           fail_on_unmatched_files: true
