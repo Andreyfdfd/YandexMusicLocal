@@ -489,5 +489,31 @@ class IncrementalScannerTests(unittest.TestCase):
         self.assertGreater(Path(cover_path).stat().st_size, 100)
         extract.assert_called_once_with(str(track.resolve()))
 
+
+    def test_seek_slider_maps_mouse_to_custom_track_bounds(self):
+        from_left = main.SeekSlider._value_from_x(
+            11, 11, 989, 0, 1000, False
+        )
+        from_middle = main.SeekSlider._value_from_x(
+            500, 11, 989, 0, 1000, False
+        )
+        from_right = main.SeekSlider._value_from_x(
+            989, 11, 989, 0, 1000, False
+        )
+        self.assertEqual(from_left, 0)
+        self.assertEqual(from_middle, 500)
+        self.assertEqual(from_right, 1000)
+
+        # The same visual coordinates remain correct for reversed layouts.
+        self.assertEqual(
+            main.SeekSlider._value_from_x(11, 11, 989, 0, 1000, True),
+            1000,
+        )
+        self.assertEqual(
+            main.SeekSlider._value_from_x(989, 11, 989, 0, 1000, True),
+            0,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
