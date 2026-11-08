@@ -132,10 +132,12 @@ internal sealed class UninstallWindow : Form
                 Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Local Music.lnk");
             string startMenuFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "Local Music");
+            string startMenuLink = Path.Combine(startMenuFolder, "Local Music.lnk");
             string dataDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalMusic");
 
             TryDeleteFile(desktopLink);
+            TryDeleteFile(startMenuLink);
             TryDeleteDirectory(startMenuFolder);
             try { Registry.CurrentUser.DeleteSubKeyTree(RegistryPath, false); } catch { }
 
