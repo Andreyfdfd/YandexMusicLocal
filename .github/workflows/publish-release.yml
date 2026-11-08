@@ -138,6 +138,48 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Setup.exe embedded-payload self-test failed.' }
           Write-Host "Setup.exe self-test passed for Local Music $version."
 
+      - name: Smoke-test installer windows
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path 'release\\Setup.exe').Path
+          $setupProcess = Start-Process -FilePath $setup -WorkingDirectory (Split-Path $setup) -PassThru
+          try {
+              Start-Sleep -Seconds 5
+              $setupProcess.Refresh()
+              if ($setupProcess.HasExited) {
+                  throw "Setup.exe exited during window startup (exit code $($setupProcess.ExitCode))."
+              }
+          } finally {
+              if (-not $setupProcess.HasExited) {
+                  Stop-Process -Id $setupProcess.Id -Force
+                  Wait-Process -Id $setupProcess.Id -Timeout 10 -ErrorAction SilentlyContinue
+              }
+          }
+
+          $testRoot = Join-Path $env:TEMP ('LocalMusic-Uninstall-Smoke-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+          try {
+              Set-Content -LiteralPath (Join-Path $testRoot 'INSTALL_INFO.json') -Value '{}' -Encoding UTF8
+              Copy-Item -LiteralPath 'release-staging\\YandexMusicLocal\\Uninstall.exe' -Destination $testRoot
+              $uninstaller = Join-Path $testRoot 'Uninstall.exe'
+              $uninstallProcess = Start-Process -FilePath $uninstaller -WorkingDirectory $testRoot -PassThru
+              try {
+                  Start-Sleep -Seconds 5
+                  $uninstallProcess.Refresh()
+                  if ($uninstallProcess.HasExited) {
+                      throw "Uninstall.exe exited during window startup (exit code $($uninstallProcess.ExitCode))."
+                  }
+              } finally {
+                  if (-not $uninstallProcess.HasExited) {
+                      Stop-Process -Id $uninstallProcess.Id -Force
+                      Wait-Process -Id $uninstallProcess.Id -Timeout 10 -ErrorAction SilentlyContinue
+                  }
+              }
+          } finally {
+              Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Host 'Setup and Uninstall windows stayed open during smoke tests.' -ForegroundColor Green
+
       - name: Upload release files for review
         uses: actions/upload-artifact@v4
         with:
