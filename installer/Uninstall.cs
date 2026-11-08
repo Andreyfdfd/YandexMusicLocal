@@ -139,7 +139,7 @@ internal sealed class UninstallWindow : Form
             TryDeleteFile(desktopLink);
             TryDeleteFile(startMenuLink);
             TryDeleteDirectory(startMenuFolder);
-            try { Registry.CurrentUser.DeleteSubKeyTree(RegistryPath, false); } catch { }
+            try { Registry.CurrentUser.DeleteSubKeyTree(UninstallProgram.RegistryPath, false); } catch { }
 
             string scriptPath = Path.Combine(
                 Path.GetTempPath(), "LocalMusic-Uninstall-" + Guid.NewGuid().ToString("N") + ".ps1");
