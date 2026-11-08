@@ -48,20 +48,15 @@ jobs:
         shell: pwsh
         run: |
           $version = '3.0.24'
-          $base = "https://download.videolan.org/pub/videolan/vlc/last/win64/vlc-$version-win64"
+          $base = "https://get.videolan.org/vlc/$version/win64/vlc-$version-win64"
           $archive = Join-Path $PWD 'vlc-win64.zip'
-          $checksumFile = Join-Path $PWD 'vlc-win64.zip.sha256'
           Invoke-WebRequest -Uri "$base.zip" -OutFile $archive
-          Invoke-WebRequest -Uri "$base.zip.sha256" -OutFile $checksumFile
 
-          $checksumText = Get-Content -LiteralPath $checksumFile -Raw
-          $match = [regex]::Match($checksumText, '(?i)\b[0-9a-f]{64}\b')
-          if (-not $match.Success) {
-              throw 'The official VideoLAN SHA-256 file did not contain a valid digest.'
-          }
+          # Official VideoLAN SHA-256 for vlc-3.0.24-win64.zip.
+          $expected = '93d34578352c50936da35c01e7f358a9b36395b350ee44096f2d3837f42a08a9'
           $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-          if ($actual -ine $match.Value) {
-              throw "VLC archive SHA-256 mismatch. Expected $($match.Value), got $actual."
+          if ($actual -ine $expected) {
+              throw "VLC archive SHA-256 mismatch. Expected $expected, got $actual."
           }
 
           $extract = Join-Path $PWD 'vlc-extract'
@@ -87,7 +82,7 @@ jobs:
               throw "The .NET Framework C# compiler was not found: $compiler"
           }
           $uninstaller = Join-Path $PWD 'release-staging\YandexMusicLocal\Uninstall.exe'
-          & $compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "/out:$uninstaller" "installer\Uninstall.cs"
+          & $compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "/out:$uninstaller" "installer\Uninstall.cs"
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $uninstaller)) {
               throw 'Could not compile the Local Music uninstaller.'
           }
