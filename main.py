@@ -2518,16 +2518,16 @@ class TrackRow(QWidget):
         artist.setFont(QFont("Segoe UI", 9))
         self.artist = artist
         text_col.addWidget(artist)
-        root.addLayout(text_col, 1)
+        root.addLayout(text_col, 6)
 
         self.album = ElidedLabel(safe_text(track.get("album"), "—"), DIM)
         self.album.setFont(QFont("Segoe UI", 9))
-        self.album.setFixedWidth(250)
-        root.addWidget(self.album)
+        self.album.setMinimumWidth(150)
+        root.addWidget(self.album, 4)
 
         self.duration = QLabel(format_ms(track.get("duration_ms")))
         self.duration.setObjectName("RowDuration")
-        self.duration.setFixedWidth(70)
+        self.duration.setFixedWidth(78)
         self.duration.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         root.addWidget(self.duration)
 
@@ -3345,14 +3345,18 @@ class LibraryPage(QWidget):
             ("", 28),
             ("", 46),
             ("Название / исполнитель", 0),
-            ("Альбом", 250),
-            ("Длительность", 70),
+            ("Альбом", 0),
+            ("Длительность", 78),
         ):
             label = QLabel(text)
             label.setObjectName("TableHeader")
             if width:
                 label.setFixedWidth(width)
-            columns.addWidget(label, 1 if width == 0 else 0)
+            elif text == "Альбом":
+                label.setMinimumWidth(150)
+                columns.addWidget(label, 4)
+                continue
+            columns.addWidget(label, 6 if text == "Название / исполнитель" else 0)
         root.addLayout(columns)
 
         self.scroll = QScrollArea()
@@ -3601,7 +3605,9 @@ class SeekSlider(QSlider):
     def __init__(self, parent=None):
         super().__init__(Qt.Orientation.Horizontal, parent)
         self.setTracking(True)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # Mouse seeking remains enabled; suppress the rectangular keyboard
+        # focus frame painted by the native Qt style around the entire slider.
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def _set_from_mouse_x(self, x: float) -> None:
         option = QStyleOptionSlider()
@@ -3738,16 +3744,23 @@ class PlayerBar(QFrame):
         self.shuffle_btn.toggled.connect(self.shuffle.emit)
         controls.addWidget(self.shuffle_btn)
 
-        self.previous_btn = IconButton("⏮", 42, "Предыдущий трек")
+        self.previous_btn = IconButton("|◀", 42, "Предыдущий трек")
+        self.previous_btn.setObjectName("PlayerTransportButton")
+        self.previous_btn.setFont(QFont("Segoe UI Symbol", 17, QFont.Weight.DemiBold))
+        self.previous_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.previous_btn.clicked.connect(self.previous.emit)
         controls.addWidget(self.previous_btn)
 
         self.play_btn = IconButton("▶", 58, "Воспроизведение / пауза")
-        self.play_btn.setObjectName("PlayButton")
+        self.play_btn.setObjectName("PlayerPlayButton")
+        self.play_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.play_btn.clicked.connect(self.play_pause.emit)
         controls.addWidget(self.play_btn)
 
-        self.next_btn = IconButton("⏭", 42, "Следующий трек")
+        self.next_btn = IconButton("▶|", 42, "Следующий трек")
+        self.next_btn.setObjectName("PlayerTransportButton")
+        self.next_btn.setFont(QFont("Segoe UI Symbol", 17, QFont.Weight.DemiBold))
+        self.next_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.next_btn.clicked.connect(self.next.emit)
         controls.addWidget(self.next_btn)
 
@@ -5151,16 +5164,36 @@ class MainWindow(QMainWindow):
             #IconButton:checked {{ background: #332e1b; border-color: #665a2a; color: {ACCENT_HOVER}; }}
             #IconButton[repeatActive="true"] {{ color: {ACCENT}; }}
             #IconButton[repeatOne="true"] {{ background: #2a2926; color: {ACCENT}; }}
-            #PlayButton {{
+            QToolButton#PlayerTransportButton {{
+                background: transparent;
+                color: #d5d5dc;
+                border: 1px solid transparent;
+                border-radius: 21px;
+                padding: 0;
+                font-size: 18px;
+                font-weight: 700;
+            }}
+            QToolButton#PlayerTransportButton:hover {{
+                background: #332e1b;
+                border-color: #665a2a;
+                color: {ACCENT_HOVER};
+            }}
+            QToolButton#PlayerTransportButton:pressed {{
+                background: #453b1e;
+                border-color: #8c792e;
+                color: white;
+            }}
+            QToolButton#PlayerPlayButton {{
                 background: {ACCENT};
                 color: #131313;
                 border: 1px solid #fff078;
-                border-radius: 31px;
+                border-radius: 29px;
+                padding: 0;
                 font-size: 22px;
                 font-weight: 800;
             }}
-            #PlayButton:hover {{ background: {ACCENT_HOVER}; }}
-            #PlayButton:pressed {{ background: {ACCENT_PRESSED}; }}
+            QToolButton#PlayerPlayButton:hover {{ background: {ACCENT_HOVER}; }}
+            QToolButton#PlayerPlayButton:pressed {{ background: {ACCENT_PRESSED}; }}
             #TableHeader {{ color: #77777f; font-size: 10px; text-transform: uppercase; letter-spacing: .8px; }}
             #TrackRow {{
                 background: transparent;
@@ -5210,6 +5243,13 @@ class MainWindow(QMainWindow):
             #ProgressSlider {{
                 min-height: 28px;
                 padding: 0 2px;
+                border: none;
+                outline: none;
+                background: transparent;
+            }}
+            #ProgressSlider:focus {{
+                border: none;
+                outline: none;
             }}
             #ProgressSlider::groove:horizontal {{
                 background: #39383a;
