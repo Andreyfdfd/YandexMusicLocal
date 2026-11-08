@@ -9,7 +9,7 @@ using System.Windows.Forms;
 internal static class UninstallProgram
 {
     private const string MarkerName = "INSTALL_INFO.json";
-    private const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LocalMusic";
+    internal const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\LocalMusic";
 
     [STAThread]
     private static int Main(string[] args)
