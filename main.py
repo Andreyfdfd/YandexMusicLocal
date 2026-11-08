@@ -3600,43 +3600,136 @@ class ListeningHistoryPage(QWidget):
 
 
 class SeekSlider(QSlider):
-    """Seek slider with reliable click-to-position and drag seeking."""
+    """Custom-painted rounded seek bar; no native QSlider frame or sub-page painting."""
+
+    HANDLE_RADIUS = 9.0
+    TRACK_HEIGHT = 7.0
+    SIDE_PADDING = 11.0
 
     def __init__(self, parent=None):
         super().__init__(Qt.Orientation.Horizontal, parent)
         self.setTracking(True)
-        # Mouse seeking remains enabled; suppress the rectangular keyboard
-        # focus frame painted by the native Qt style around the entire slider.
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Prevent platform/Fusion frame and background painting. The entire
+        # visible control is drawn by paintEvent below, independently of QSS.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
+        self.setMinimumHeight(30)
+
+    def _track_bounds(self) -> tuple[float, float]:
+        left = self.SIDE_PADDING
+        right = max(left + 1.0, float(self.width()) - self.SIDE_PADDING)
+        return left, right
+
+    @staticmethod
+    def _value_from_x(
+        x: float,
+        left: float,
+        right: float,
+        minimum: int,
+        maximum: int,
+        upside_down: bool = False,
+    ) -> int:
+        span = max(1, int(round(float(right) - float(left))))
+        position = int(round(max(0.0, min(float(span), float(x) - float(left)))))
+        return QStyle.sliderValueFromPosition(
+            int(minimum), int(maximum), position, span, bool(upside_down)
+        )
 
     def _set_from_mouse_x(self, x: float) -> None:
         option = QStyleOptionSlider()
         self.initStyleOption(option)
-        style = self.style()
-        groove = style.subControlRect(
-            QStyle.ComplexControl.CC_Slider,
-            option,
-            QStyle.SubControl.SC_SliderGroove,
-            self,
+        left, right = self._track_bounds()
+        self.setSliderPosition(
+            self._value_from_x(
+                x, left, right, self.minimum(), self.maximum(), option.upsideDown
+            )
         )
-        handle = style.subControlRect(
-            QStyle.ComplexControl.CC_Slider,
-            option,
-            QStyle.SubControl.SC_SliderHandle,
-            self,
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        left, right = self._track_bounds()
+        width = max(1.0, right - left)
+        center_y = self.height() / 2.0
+        track_top = center_y - self.TRACK_HEIGHT / 2.0
+        track_rect = QRectF(left, track_top, width, self.TRACK_HEIGHT)
+        track_radius = self.TRACK_HEIGHT / 2.0
+
+        # Draw a single dark capsule as the unplayed region. No border, frame,
+        # groove subcontrol or native style element is involved.
+        painter.setBrush(QColor("#3b3a40"))
+        painter.drawRoundedRect(track_rect, track_radius, track_radius)
+
+        minimum = self.minimum()
+        maximum = self.maximum()
+        current = self.sliderPosition() if self.isSliderDown() else self.value()
+        option = QStyleOptionSlider()
+        self.initStyleOption(option)
+        if maximum > minimum:
+            pixel_position = QStyle.sliderPositionFromValue(
+                minimum,
+                maximum,
+                current,
+                int(round(width)),
+                option.upsideDown,
+            )
+            handle_x = left + pixel_position
+        else:
+            handle_x = right if option.upsideDown else left
+        handle_x = max(left, min(right, float(handle_x)))
+
+        if handle_x > left:
+            fill_rect = QRectF(
+                left, track_top, max(0.1, handle_x - left), self.TRACK_HEIGHT
+            )
+            gradient = QLinearGradient(left, center_y, right, center_y)
+            gradient.setColorAt(0.0, QColor("#e4c900"))
+            gradient.setColorAt(1.0, QColor("#ffe45c"))
+            painter.setBrush(gradient)
+            painter.drawRoundedRect(fill_rect, track_radius, track_radius)
+
+        # Dark outer ring gives the yellow thumb clear contrast without a
+        # rectangular focus frame; hover/drag simply adds a lighter inner face.
+        outer_radius = self.HANDLE_RADIUS + (1.0 if self.underMouse() else 0.0)
+        painter.setBrush(QColor("#19191c"))
+        painter.drawEllipse(
+            QRectF(
+                handle_x - outer_radius,
+                center_y - outer_radius,
+                outer_radius * 2.0,
+                outer_radius * 2.0,
+            )
         )
-        left = groove.left() + handle.width() / 2.0
-        right = groove.right() - handle.width() / 2.0
-        span = max(1, int(round(right - left)))
-        position = int(round(max(0.0, min(float(span), x - left))))
-        value = QStyle.sliderValueFromPosition(
-            self.minimum(),
-            self.maximum(),
-            position,
-            span,
-            option.upsideDown,
+        inner_radius = self.HANDLE_RADIUS - 1.0
+        painter.setBrush(
+            QColor("#ffe45c") if self.underMouse() or self.isSliderDown()
+            else QColor("#ffdf00")
         )
-        self.setSliderPosition(value)
+        painter.drawEllipse(
+            QRectF(
+                handle_x - inner_radius,
+                center_y - inner_radius,
+                inner_radius * 2.0,
+                inner_radius * 2.0,
+            )
+        )
+        painter.end()
+
+    def sliderChange(self, change) -> None:
+        super().sliderChange(change)
+        self.update()
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -5281,44 +5374,15 @@ class MainWindow(QMainWindow):
             #ShuffleButton:checked:hover {{ background: {ACCENT_HOVER}; }}
             #TinyText {{ color: #b9b9c1; font-size: 11px; font-weight: 650; }}
             #VolumeIcon {{ color: #d0d0d6; font-size: 21px; }}
+            /* The seek bar is painted manually by SeekSlider.paintEvent().
+               Do not style ::groove / ::sub-page / ::handle: Qt may clip their
+               rounded subcontrols to rectangular regions on some styles. */
             #ProgressSlider {{
-                min-height: 28px;
-                padding: 0 2px;
+                min-height: 30px;
+                padding: 0;
+                margin: 0;
                 border: none;
-                outline: none;
                 background: transparent;
-            }}
-            #ProgressSlider:focus {{
-                border: none;
-                outline: none;
-            }}
-            #ProgressSlider::groove:horizontal {{
-                background: #39383a;
-                border: none;
-                height: 8px;
-                border-radius: 5px;
-            }}
-            #ProgressSlider::sub-page:horizontal {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #e4c900, stop:1 {ACCENT_HOVER});
-                border: none;
-                height: 8px;
-                border-radius: 5px;
-            }}
-            #ProgressSlider::handle:horizontal {{
-                background: {ACCENT};
-                border: 2px solid #141416;
-                width: 18px;
-                height: 18px;
-                margin: -6px 0;
-                border-radius: 10px;
-            }}
-            #ProgressSlider:hover::handle:horizontal {{
-                background: {ACCENT_HOVER};
-                border-color: #222224;
-            }}
-            #ProgressSlider:disabled::handle:horizontal {{
-                background: #67676b;
             }}
             #VolumeSlider::groove:horizontal {{ background: #47474d; height: 7px; border-radius: 5px; }}
             #VolumeSlider::sub-page:horizontal {{ background: {ACCENT}; height: 7px; border-radius: 5px; }}
