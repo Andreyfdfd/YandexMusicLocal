@@ -1,0 +1,157 @@
+name: Build and publish Local Music release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: local-music-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install application dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install --upgrade pyinstaller
+
+      - name: Build Local Music application
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --distpath release-staging --workpath build-release "Local Music.spec"
+          $app = Join-Path $PWD 'release-staging\YandexMusicLocal'
+          if (-not (Test-Path (Join-Path $app 'YandexMusicLocal.exe'))) {
+              throw 'PyInstaller did not produce YandexMusicLocal.exe.'
+          }
+
+      - name: Download and verify official VLC runtime
+        shell: pwsh
+        run: |
+          $version = '3.0.24'
+          $base = "https://download.videolan.org/pub/videolan/vlc/last/win64/vlc-$version-win64"
+          $archive = Join-Path $PWD 'vlc-win64.zip'
+          $checksumFile = Join-Path $PWD 'vlc-win64.zip.sha256'
+          Invoke-WebRequest -Uri "$base.zip" -OutFile $archive
+          Invoke-WebRequest -Uri "$base.zip.sha256" -OutFile $checksumFile
+
+          $checksumText = Get-Content -LiteralPath $checksumFile -Raw
+          $match = [regex]::Match($checksumText, '(?i)\b[0-9a-f]{64}\b')
+          if (-not $match.Success) {
+              throw 'The official VideoLAN SHA-256 file did not contain a valid digest.'
+          }
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actual -ine $match.Value) {
+              throw "VLC archive SHA-256 mismatch. Expected $($match.Value), got $actual."
+          }
+
+          $extract = Join-Path $PWD 'vlc-extract'
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          $lib = Get-ChildItem -LiteralPath $extract -Filter 'libvlc.dll' -File -Recurse | Select-Object -First 1
+          if ($null -eq $lib) {
+              throw 'Official VLC archive did not contain libvlc.dll.'
+          }
+          $vlcRoot = $lib.Directory.FullName
+          $target = Join-Path $PWD 'release-staging\YandexMusicLocal\vlc'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          Copy-Item -Path (Join-Path $vlcRoot '*') -Destination $target -Recurse -Force
+          if (-not (Test-Path (Join-Path $target 'plugins'))) {
+              throw 'VLC plugins folder is missing from the packaged runtime.'
+          }
+          Write-Host "Bundled VideoLAN VLC $version into the app package."
+
+      - name: Build and verify the uninstaller
+        shell: pwsh
+        run: |
+          $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) {
+              throw "The .NET Framework C# compiler was not found: $compiler"
+          }
+          $uninstaller = Join-Path $PWD 'release-staging\YandexMusicLocal\Uninstall.exe'
+          & $compiler /nologo /target:winexe /platform:x64 /optimize+ /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "/out:$uninstaller" "installer\Uninstall.cs"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $uninstaller)) {
+              throw 'Could not compile the Local Music uninstaller.'
+          }
+          & $uninstaller --self-test
+          if ($LASTEXITCODE -ne 0) {
+              throw 'The Local Music uninstaller self-test failed.'
+          }
+
+      - name: Prepare application package
+        id: version
+        shell: pwsh
+        run: |
+          $version = "1.0.\${{ github.run_number }}"
+          $app = Join-Path $PWD 'release-staging\YandexMusicLocal'
+          @(
+              'Local Music'
+              "Version: $version"
+              'Platform: Windows x64'
+              'Application: YandexMusicLocal.exe'
+              'Audio engine: VideoLAN VLC 3.0.24 (bundled)'
+              'Uninstaller: Uninstall.exe'
+          ) | Set-Content -LiteralPath (Join-Path $app 'BUILD_INFO.txt') -Encoding UTF8
+
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          $package = Join-Path $PWD 'release\LocalMusic-Package.zip'
+          if (Test-Path $package) { Remove-Item $package -Force }
+          Compress-Archive -Path (Join-Path $app '*') -DestinationPath $package -CompressionLevel Optimal
+
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  LocalMusic-Package.zip" | Set-Content -LiteralPath 'release\LocalMusic-Package.sha256' -Encoding ASCII
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Prepared Local Music $version package ($((Get-Item $package).Length) bytes)."
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish self-contained Setup.exe
+        shell: pwsh
+        run: |
+          $version = "\${{ steps.version.outputs.version }}"
+          $package = Join-Path $PWD 'release\LocalMusic-Package.zip'
+          dotnet publish installer\LocalMusicSetup.csproj --configuration Release --runtime win-x64 --self-contained true "-p:PackageZip=$package" "-p:Version=$version" -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output release\setup-output
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish Setup.exe.' }
+
+          $setup = Join-Path $PWD 'release\setup-output\Setup.exe'
+          if (-not (Test-Path -LiteralPath $setup)) {
+              throw 'The self-contained Setup.exe was not produced.'
+          }
+          Copy-Item -LiteralPath $setup -Destination 'release\Setup.exe' -Force
+          & (Resolve-Path 'release\Setup.exe').Path --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Setup.exe embedded-payload self-test failed.' }
+          Write-Host "Setup.exe self-test passed for Local Music $version."
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v\${{ steps.version.outputs.version }}
+          name: Local Music v\${{ steps.version.outputs.version }}
+          target_commitish: \${{ github.sha }}
+          make_latest: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/Setup.exe
+            release/LocalMusic-Package.zip
+            release/LocalMusic-Package.sha256
