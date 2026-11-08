@@ -28,7 +28,6 @@ internal static class Program
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
             return SelfTest();
 
-        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         ApplicationConfiguration.Initialize();
 
         string executableName = Path.GetFileName(Environment.ProcessPath ?? "");
