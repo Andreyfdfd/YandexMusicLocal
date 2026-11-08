@@ -90,3 +90,31 @@ jobs:
               throw "PyInstaller did not produce the expected GUI executable: $exe"
           }
           Write-Host "Executable package created: $exe" -ForegroundColor Green
+
+      - name: Smoke-test packaged Windows executable
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path 'dist-staging\\YandexMusicLocal\\YandexMusicLocal.exe').Path
+          $process = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
+          try {
+              Start-Sleep -Seconds 8
+              $process.Refresh()
+              if ($process.HasExited) {
+                  throw "Packaged executable exited during startup (exit code $($process.ExitCode))."
+              }
+              Write-Host "Packaged GUI stayed running after startup." -ForegroundColor Green
+          } finally {
+              if (-not $process.HasExited) {
+                  Stop-Process -Id $process.Id -Force
+                  Wait-Process -Id $process.Id -Timeout 10 -ErrorAction SilentlyContinue
+              }
+          }
+
+      - name: Upload Windows application package
+        if: matrix.python-version == '3.14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Local-Music-Windows-Package
+          path: dist-staging/YandexMusicLocal/
+          if-no-files-found: error
+          retention-days: 14
