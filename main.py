@@ -3685,6 +3685,53 @@ class QueueComboBox(QComboBox):
         painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
 
 
+class TransportButton(QToolButton):
+    """Draw crisp previous/next glyphs with vector geometry, independent of fonts."""
+
+    def __init__(self, direction: str, tooltip: str, parent=None):
+        super().__init__(parent)
+        if direction not in {"previous", "next"}:
+            raise ValueError("direction must be 'previous' or 'next'")
+        self.direction = direction
+        self.setFixedSize(46, 46)
+        self.setObjectName("PlayerTransportButton")
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setToolTip(tooltip)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def paintEvent(self, event) -> None:
+        # Let Qt paint the circular hover/pressed surface using the stylesheet.
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        color = QColor(ACCENT_HOVER if self.underMouse() else "#d5d5dc")
+        if self.isDown():
+            color = QColor("#ffffff")
+        painter.setBrush(color)
+
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+        glyph = QPainterPath()
+
+        if self.direction == "previous":
+            glyph.moveTo(cx - 7, cy)
+            glyph.lineTo(cx + 3, cy - 9)
+            glyph.lineTo(cx + 3, cy + 9)
+            bar_x = cx + 6
+        else:
+            glyph.moveTo(cx + 7, cy)
+            glyph.lineTo(cx - 3, cy - 9)
+            glyph.lineTo(cx - 3, cy + 9)
+            bar_x = cx - 9
+
+        glyph.closeSubpath()
+        painter.drawPath(glyph)
+        painter.drawRoundedRect(QRectF(bar_x, cy - 9, 3, 18), 1.3, 1.3)
+        painter.end()
+
+
 class PlayerBar(QFrame):
     play_pause = pyqtSignal()
     previous = pyqtSignal()
@@ -3744,10 +3791,7 @@ class PlayerBar(QFrame):
         self.shuffle_btn.toggled.connect(self.shuffle.emit)
         controls.addWidget(self.shuffle_btn)
 
-        self.previous_btn = IconButton("|◀", 42, "Предыдущий трек")
-        self.previous_btn.setObjectName("PlayerTransportButton")
-        self.previous_btn.setFont(QFont("Segoe UI Symbol", 17, QFont.Weight.DemiBold))
-        self.previous_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.previous_btn = TransportButton("previous", "Предыдущий трек")
         self.previous_btn.clicked.connect(self.previous.emit)
         controls.addWidget(self.previous_btn)
 
@@ -3757,10 +3801,7 @@ class PlayerBar(QFrame):
         self.play_btn.clicked.connect(self.play_pause.emit)
         controls.addWidget(self.play_btn)
 
-        self.next_btn = IconButton("▶|", 42, "Следующий трек")
-        self.next_btn.setObjectName("PlayerTransportButton")
-        self.next_btn.setFont(QFont("Segoe UI Symbol", 17, QFont.Weight.DemiBold))
-        self.next_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.next_btn = TransportButton("next", "Следующий трек")
         self.next_btn.clicked.connect(self.next.emit)
         controls.addWidget(self.next_btn)
 
@@ -5253,13 +5294,14 @@ class MainWindow(QMainWindow):
             }}
             #ProgressSlider::groove:horizontal {{
                 background: #39383a;
-                border: 1px solid #514b35;
+                border: none;
                 height: 8px;
                 border-radius: 5px;
             }}
             #ProgressSlider::sub-page:horizontal {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #e4c900, stop:1 {ACCENT_HOVER});
+                border: none;
                 height: 8px;
                 border-radius: 5px;
             }}
