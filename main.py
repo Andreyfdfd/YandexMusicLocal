@@ -33,7 +33,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import math
 import os
 import queue
 import random
@@ -746,98 +745,6 @@ class ListeningSessionWriter:
                     self._pending -= 1
                     self._pending_condition.notify_all()
                 self._commands.task_done()
-
-
-def fetch_artist_listening_totals() -> dict[str, int]:
-    conn = db_connect()
-    try:
-        rows = conn.execute(
-            """SELECT artist, COALESCE(SUM(listened_ms), 0)
-               FROM listening_sessions
-               GROUP BY artist COLLATE NOCASE"""
-        ).fetchall()
-    finally:
-        conn.close()
-    return {
-        safe_text(artist, "Неизвестный исполнитель").casefold(): int(listened_ms or 0)
-        for artist, listened_ms in rows
-    }
-
-
-def build_local_wave(
-    tracks: list[dict],
-    artist_listening_ms: Optional[dict[str, int]] = None,
-) -> list[dict]:
-    """Create a weighted local-library mix while avoiding artist dead ends."""
-    artist_listening_ms = artist_listening_ms or {}
-    remaining: list[tuple[dict, float]] = []
-    for original in tracks:
-        track = dict(original)
-        artist_key = safe_text(track.get("artist"), "Неизвестный исполнитель").casefold()
-        track_minutes = max(0, int(track.get("listened_ms") or 0)) / 60_000
-        artist_minutes = max(0, int(artist_listening_ms.get(artist_key, 0))) / 60_000
-        discovery_boost = 1.0 if track_minutes < 2 else 0.0
-        weight = (
-            1.0
-            + math.log1p(track_minutes) * 0.45
-            + math.log1p(artist_minutes) * 0.65
-            + discovery_boost
-        )
-        remaining.append((track, max(0.1, weight)))
-
-    mix: list[dict] = []
-    previous_artist = ""
-    while remaining:
-        artist_keys = [
-            safe_text(track.get("artist"), "Неизвестный исполнитель").casefold()
-            for track, _weight in remaining
-        ]
-        artist_counts: dict[str, int] = {}
-        for artist_key in artist_keys:
-            artist_counts[artist_key] = artist_counts.get(artist_key, 0) + 1
-
-        eligible = [
-            index for index, artist_key in enumerate(artist_keys)
-            if artist_key != previous_artist
-        ]
-        if not eligible:
-            # Repetition is unavoidable only when all remaining tracks belong
-            # to the same artist as the previously selected track.
-            eligible = list(range(len(remaining)))
-        else:
-            # A locally valid choice can still leave two tracks by one artist
-            # stranded at the end. Keep candidates whose removal leaves a
-            # feasible no-adjacent-artist ordering, whenever such a choice exists.
-            remaining_after = len(remaining) - 1
-            viable: list[int] = []
-            for index in eligible:
-                candidate_artist = artist_keys[index]
-                counts_after = dict(artist_counts)
-                counts_after[candidate_artist] -= 1
-                if counts_after[candidate_artist] > remaining_after // 2:
-                    continue
-                other_limit = (remaining_after + 1) // 2
-                if any(
-                    count > other_limit
-                    for artist, count in counts_after.items()
-                    if artist != candidate_artist
-                ):
-                    continue
-                viable.append(index)
-            if viable:
-                eligible = viable
-
-        chosen_index = random.choices(
-            eligible,
-            weights=[remaining[index][1] for index in eligible],
-            k=1,
-        )[0]
-        track, _weight = remaining.pop(chosen_index)
-        mix.append(track)
-        previous_artist = safe_text(
-            track.get("artist"), "Неизвестный исполнитель"
-        ).casefold()
-    return mix
 
 
 def fetch_listening_summary() -> dict:
@@ -3258,7 +3165,6 @@ class LibraryPage(QWidget):
     track_clicked = pyqtSignal(int)
     play_all = pyqtSignal()
     shuffle_all = pyqtSignal()
-    wave_requested = pyqtSignal()
 
     def __init__(self, music_folder: Path, parent=None):
         super().__init__(parent)
@@ -3319,14 +3225,6 @@ class LibraryPage(QWidget):
         self.sort.combo.blockSignals(False)
         self.sort.changed.connect(self._sort_changed)
         head.addWidget(self.sort)
-
-        wave = QPushButton("✦  Моя волна")
-        wave.setObjectName("WaveButton")
-        wave.setToolTip(
-            "Локальная персональная подборка по истории, избранному и разнообразию исполнителей"
-        )
-        wave.clicked.connect(self.wave_requested.emit)
-        head.addWidget(wave)
 
         shuffle = IconButton("🔀", 40, "Перемешать результат")
         shuffle.clicked.connect(self.shuffle_all.emit)
@@ -4183,7 +4081,6 @@ class MainWindow(QMainWindow):
         self.library.track_clicked.connect(self.play_library_index)
         self.library.play_all.connect(self.play_library_all)
         self.library.shuffle_all.connect(self.shuffle_library)
-        self.library.wave_requested.connect(self.play_my_wave)
 
         self.history_page = ListeningHistoryPage()
         self.history_page.track_activated.connect(self.play_history_path)
@@ -4609,22 +4506,6 @@ class MainWindow(QMainWindow):
         tracks = list(self.library.results)
         random.shuffle(tracks)
         self._set_queue(tracks, 0, True)
-
-    def play_my_wave(self) -> None:
-        try:
-            tracks = fetch_all_tracks(self.music_folder, "Время прослушивания", True)
-            if not tracks:
-                self.statusBar().showMessage("В библиотеке пока нет треков для «Моей волны».", 5000)
-                return
-            artist_history = fetch_artist_listening_totals()
-            mix = build_local_wave(tracks, artist_history)
-            self._set_queue(mix, 0, False)
-            self.statusBar().showMessage(
-                f"Моя волна: персональная подборка из {len(mix)} локальных треков",
-                5000,
-            )
-        except Exception as exc:
-            self.statusBar().showMessage(f"Не удалось собрать «Мою волну»: {exc}", 7000)
 
     def _ensure_player(self) -> bool:
         if self.player is not None and self.vlc_instance is not None:
@@ -5242,22 +5123,6 @@ class MainWindow(QMainWindow):
             }}
             #AccentButton:hover {{ background: {ACCENT_HOVER}; }}
             #AccentButton:pressed {{ background: {ACCENT_PRESSED}; }}
-            #WaveButton {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #ffeb53, stop:0.55 #ffd928, stop:1 #ffb94b);
-                color: #19160a;
-                border: 1px solid #fff07b;
-                border-radius: 19px;
-                padding: 14px 22px;
-                font-size: 15px;
-                font-weight: 850;
-            }}
-            #WaveButton:hover {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #fff28b, stop:0.55 #ffe761, stop:1 #ffc976);
-                border-color: #fff8ba;
-            }}
-            #WaveButton:pressed {{ background: #e8b820; }}
             #GhostButton {{
                 background: #252528;
                 color: #f4f4f5;
